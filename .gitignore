@@ -8,3 +8,6 @@ DerivedData/
 xcuserdata/
 .swiftpm/
 .build/
+
+# NotchPilot packaging output
+dist/
