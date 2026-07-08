@@ -35,9 +35,10 @@ keeps the door open for Cursor and Codex providers later.
 
 ### Compact state (always present)
 
-Top-center of the screen: hugs the real notch on notched MacBooks; on other
-displays (external monitors, non-notched Macs) draws a floating notch-shaped
-pill via DynamicNotchKit's `.floating` style. Shows the minimum useful signal —
+Top-center of one display at a time — in v1, the main display (the one with
+the menu bar). When that display has a physical notch the UI hugs it; when it
+does not (external monitors, non-notched Macs) the UI is a floating
+notch-shaped pill via DynamicNotchKit's `.floating` style. Shows the minimum useful signal —
 a dot + count per status class, e.g. `● 2` (green, working) `● 1` (orange,
 needs attention). All idle → single dim glyph. When any session flips to
 *needs attention*, the compact view pulses orange; optionally the panel
@@ -111,7 +112,8 @@ app watches that directory with FSEvents and updates state instantly.
 
 FSEvents on `~/.claude/projects/**/*.jsonl`, incremental tail-parse of appended
 lines. Yields current activity (last `tool_use` name/target) and the context
-gauge (latest assistant message token usage vs. the model's context window).
+gauge (latest assistant message token usage vs. the model's context window,
+looked up from a small built-in model table; unknown models assume 200k).
 The parser is tolerant: unknown line shapes are skipped so Claude Code format
 drift degrades gracefully (e.g. gauge hides if usage fields disappear) instead
 of crashing.
