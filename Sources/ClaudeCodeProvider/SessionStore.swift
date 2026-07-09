@@ -130,6 +130,9 @@ final class SessionStore {
         if let cwd = event.cwd, !cwd.isEmpty {
             entry.session.projectPath = cwd
         }
+        if let branch = event.gitBranch, !branch.isEmpty {
+            entry.session.gitBranch = branch
+        }
         entry.session.lastActivityAt = timestamp
 
         let signal: SessionSignal
@@ -157,6 +160,9 @@ final class SessionStore {
         case let .assistantActivity(activity):
             if let description = activity.activityDescription {
                 entry.session.activity = description
+            }
+            if let model = activity.model, !model.isEmpty {
+                entry.session.model = model
             }
             if let used = activity.contextUsedTokens {
                 entry.session.contextUsedTokens = used
@@ -246,6 +252,9 @@ final class SessionStore {
             entry.desktopTitle = info.title ?? entry.desktopTitle
             entry.scheduledTaskId = info.scheduledTaskId ?? entry.scheduledTaskId
             entry.session.pullRequest = info.pullRequest ?? entry.session.pullRequest
+            if entry.session.gitBranch == nil {
+                entry.session.gitBranch = info.branch
+            }
             entry.refreshName()
             entry.session.isRoutine = entry.isRoutine
             entries[sessionId] = entry

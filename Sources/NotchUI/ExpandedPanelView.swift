@@ -37,41 +37,58 @@ public struct ExpandedPanelView: View {
     // MARK: Full panel
 
     private var panel: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             header
-            Divider()
-                .overlay(Color.white.opacity(0.15))
+            if let usage = model.usage, !usage.windows.isEmpty {
+                UsageBlockView(usage: usage)
+            }
             if model.sessions.isEmpty {
                 emptyState
             } else {
                 sessionList
             }
         }
-        .padding(12)
-        .frame(width: 380)
+        .padding(14)
+        .frame(width: 420)
+        .background(
+            LinearGradient(
+                colors: [
+                    Color(red: 0.20, green: 0.11, blue: 0.06),
+                    Color(red: 0.08, green: 0.05, blue: 0.03),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+        )
     }
 
     private var header: some View {
-        HStack(spacing: 6) {
-            Text("NotchPilot")
-                .font(.system(size: 13, weight: .semibold))
+        HStack(spacing: 7) {
+            Image(systemName: "asterisk")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(NotchTheme.accent)
+            Text("\(model.groups.active.count) agent\(model.groups.active.count == 1 ? "" : "s")")
+                .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(.white)
             if model.isLimitedMode {
-                Text("limited mode")
-                    .font(.system(size: 9, weight: .medium))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Capsule().fill(Color.orange.opacity(0.25)))
-                    .foregroundStyle(.orange)
+                ChipView(text: "LIMITED", color: Color.white.opacity(0.5))
                     .help("Hooks are not installed — statuses are heuristics from transcript activity only.")
             }
             Spacer()
+            if model.attentionCount > 0 {
+                ChipView(
+                    text: "\(model.attentionCount) needs you",
+                    color: NotchTheme.accent,
+                    emphasized: true
+                )
+            }
             Button {
                 model.onOpenSettings?()
             } label: {
                 Image(systemName: "gearshape.fill")
                     .font(.system(size: 11))
-                    .foregroundStyle(Color.white.opacity(0.6))
+                    .foregroundStyle(Color.white.opacity(0.55))
             }
             .buttonStyle(.plain)
             .help("NotchPilot Settings")
@@ -91,24 +108,21 @@ public struct ExpandedPanelView: View {
     private var sessionList: some View {
         let groups = model.groups
         return ScrollView(.vertical, showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 2) {
-                if !groups.active.isEmpty {
-                    sectionHeader("Active", count: groups.active.count)
-                    rows(groups.active)
-                }
+            VStack(alignment: .leading, spacing: 3) {
+                rows(groups.active)
                 if !groups.inactive.isEmpty {
-                    sectionHeader("Recent", count: groups.inactive.count)
+                    sectionHeader("Recent")
                         .padding(.top, groups.active.isEmpty ? 0 : 6)
                     rows(groups.inactive)
                 }
                 if !groups.routines.isEmpty {
-                    sectionHeader("Routines", count: groups.routines.count)
+                    sectionHeader("Routines")
                         .padding(.top, groups.active.isEmpty && groups.inactive.isEmpty ? 0 : 6)
                     rows(groups.routines)
                 }
             }
         }
-        .frame(maxHeight: 320)
+        .frame(maxHeight: 380)
     }
 
     private func rows(_ sessions: [AgentSession]) -> some View {
@@ -119,19 +133,122 @@ public struct ExpandedPanelView: View {
         }
     }
 
-    private func sectionHeader(_ title: String, count: Int) -> some View {
-        HStack(spacing: 5) {
-            Text(title.uppercased())
-                .font(.system(size: 9, weight: .semibold))
-                .kerning(0.8)
-            Text("\(count)")
-                .font(.system(size: 9, weight: .semibold))
-                .monospacedDigit()
-                .padding(.horizontal, 4)
-                .background(Capsule().fill(Color.white.opacity(0.12)))
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title.uppercased())
+            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+            .kerning(0.8)
+            .foregroundStyle(Color.white.opacity(0.35))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 2)
+    }
+}
+
+/// Shared warm accent palette.
+enum NotchTheme {
+    static let accent = Color(red: 1.0, green: 0.42, blue: 0.21) // warm orange
+    static let working = Color(red: 0.29, green: 0.87, blue: 0.50)
+}
+
+/// Small bordered mono-font chip ("NEEDS YOU", "Opus 4.8", "22%").
+struct ChipView: View {
+    let text: String
+    var icon: String?
+    var color: Color = Color.white.opacity(0.6)
+    var emphasized = false
+
+    var body: some View {
+        HStack(spacing: 3) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            Text(text)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
         }
-        .foregroundStyle(Color.white.opacity(0.4))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 2)
+        .foregroundStyle(color)
+        .padding(.horizontal, 7)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(color.opacity(emphasized ? 0.14 : 0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(color.opacity(emphasized ? 0.7 : 0.35), lineWidth: 1)
+        )
+    }
+}
+
+/// Claude rate-limit windows: one bar per window (5h, 7d, per-model).
+struct UsageBlockView: View {
+    let usage: UsageSnapshot
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: "asterisk")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(NotchTheme.accent)
+                Text("Claude")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            ForEach(usage.windows) { window in
+                UsageWindowRow(window: window)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color.white.opacity(0.05))
+        )
+    }
+}
+
+struct UsageWindowRow: View {
+    let window: UsageWindow
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(window.label)
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundStyle(Color.white.opacity(0.45))
+                .frame(width: 64, alignment: .leading)
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.12))
+                    Capsule()
+                        .fill(barColor)
+                        .frame(width: max(3, geometry.size.width * window.remainingFraction))
+                }
+            }
+            .frame(width: 72, height: 5)
+            Text("\(Int((window.remainingFraction * 100).rounded()))% left")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white)
+            if let resetsAt = window.resetsAt {
+                Text("· resets \(Self.resetText(resetsAt))")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Color.white.opacity(0.4))
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private var barColor: Color {
+        if window.remainingFraction > 0.5 { return NotchTheme.working }
+        if window.remainingFraction > 0.2 { return .orange }
+        return .red
+    }
+
+    static func resetText(_ date: Date, now: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        if Calendar.current.isDate(date, inSameDayAs: now) {
+            formatter.timeStyle = .short
+            formatter.dateStyle = .none
+        } else {
+            formatter.setLocalizedDateFormatFromTemplate("MMM d")
+        }
+        return formatter.string(from: date)
     }
 }

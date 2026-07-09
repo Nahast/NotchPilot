@@ -10,6 +10,8 @@ struct DesktopSessionInfo: Equatable {
     var scheduledTaskId: String?
     /// Attached pull request identity + state (no live CI data is stored).
     var pullRequest: PullRequestInfo?
+    /// Working branch recorded by the desktop app.
+    var branch: String?
 }
 
 /// Reads the Claude desktop app's session metadata
@@ -82,7 +84,8 @@ final class DesktopSessionMetadataReader {
             info: DesktopSessionInfo(
                 title: nonEmpty(dictionary["title"] as? String),
                 scheduledTaskId: nonEmpty(dictionary["scheduledTaskId"] as? String),
-                pullRequest: parsePullRequest(dictionary)
+                pullRequest: parsePullRequest(dictionary),
+                branch: nonEmpty(dictionary["branch"] as? String)
             ),
             recency: recency
         )

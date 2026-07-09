@@ -7,6 +7,8 @@ import Foundation
 public final class NotchViewModel: ObservableObject {
     @Published public private(set) var sessions: [AgentSession] = []
     @Published public private(set) var isLimitedMode = false
+    /// Claude rate-limit windows (5h/7d/per-model); nil hides the block.
+    @Published public private(set) var usage: UsageSnapshot?
     /// Mirrored from the presenter's hover tracking.
     @Published public var isHovering = false
     /// True while an auto-peek is holding the panel open.
@@ -29,6 +31,10 @@ public final class NotchViewModel: ObservableObject {
 
     public func update(isLimitedMode: Bool) {
         self.isLimitedMode = isLimitedMode
+    }
+
+    public func update(usage: UsageSnapshot?) {
+        self.usage = usage
     }
 
     /// Panel grouping: main list capped at 5 (actives first, most recent

@@ -77,5 +77,13 @@ All processing happens on your Mac. NotchPilot reads `~/.claude` (transcripts,
 session registry, and settings) and the Claude desktop app's local session
 store (for the session titles you see in its sidebar), and writes only to its
 own Application Support folder plus the hooks entries in
-`~/.claude/settings.json` (with backups). The only network traffic is the
-Sparkle update check against GitHub Releases.
+`~/.claude/settings.json` (with backups).
+
+Network traffic is limited to:
+
+- the Sparkle update check against GitHub Releases;
+- when "Show Claude usage limits" is enabled (default), Anthropic's usage
+  endpoint — queried with Claude Code's own OAuth credentials, read from your
+  Keychain after you approve the macOS permission prompt. Credentials are
+  sent nowhere except `api.anthropic.com`. Turn the toggle off in Settings
+  for zero Anthropic traffic.

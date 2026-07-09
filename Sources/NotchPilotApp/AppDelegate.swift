@@ -16,6 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var presenter: NotchPresenter!
     private var jumpService: JumpService!
     private var updateService: UpdateService!
+    private var usageService: UsageService!
     private var hookInstaller: HookInstaller!
     private var cancellables = Set<AnyCancellable>()
 
@@ -78,6 +79,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             autoPeekEnabled: { settingsStore.autoPeek }
         )
 
+        usageService = UsageService(isEnabled: { settingsStore.showUsage })
+        usageService.snapshotPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] snapshot in
+                Task { @MainActor [weak self] in
+                    self?.model.update(usage: snapshot)
+                }
+            }
+            .store(in: &cancellables)
+        if demoMode {
+            model.update(usage: Self.demoUsage())
+        } else {
+            usageService.start()
+        }
+
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
@@ -98,6 +114,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillTerminate(_ notification: Notification) {
         provider?.stop()
+        usageService?.stop()
+    }
+
+    private static func demoUsage() -> UsageSnapshot {
+        UsageSnapshot(
+            windows: [
+                UsageWindow(key: "five_hour", label: "5h", usedFraction: 0.16, resetsAt: Date().addingTimeInterval(2.4 * 3600)),
+                UsageWindow(key: "seven_day", label: "7d", usedFraction: 0.19, resetsAt: Date().addingTimeInterval(4.2 * 86_400)),
+                UsageWindow(key: "seven_day_fable", label: "7d Fable", usedFraction: 0.34, resetsAt: Date().addingTimeInterval(4.2 * 86_400)),
+            ],
+            fetchedAt: Date()
+        )
     }
 
     // MARK: Onboarding

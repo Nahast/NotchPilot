@@ -20,12 +20,21 @@ public struct TranscriptEvent: Equatable {
     /// statuses and "waiting 3m" correct when parsing pre-existing
     /// transcripts at app launch.
     public var timestamp: Date?
+    /// Git branch recorded on the line.
+    public var gitBranch: String?
 
-    public init(sessionId: String?, cwd: String?, kind: Kind, timestamp: Date? = nil) {
+    public init(
+        sessionId: String?,
+        cwd: String?,
+        kind: Kind,
+        timestamp: Date? = nil,
+        gitBranch: String? = nil
+    ) {
         self.sessionId = sessionId
         self.cwd = cwd
         self.kind = kind
         self.timestamp = timestamp
+        self.gitBranch = gitBranch
     }
 }
 
@@ -88,30 +97,35 @@ public enum TranscriptLineParser {
         let cwd = dictionary["cwd"] as? String
         let type = dictionary["type"] as? String
         let timestamp = parseTimestamp(dictionary["timestamp"])
+        let gitBranch = dictionary["gitBranch"] as? String
+
+        func event(_ kind: TranscriptEvent.Kind) -> TranscriptEvent {
+            TranscriptEvent(
+                sessionId: sessionId,
+                cwd: cwd,
+                kind: kind,
+                timestamp: timestamp,
+                gitBranch: gitBranch
+            )
+        }
 
         // Subagent (sidechain) activity is out of scope for v1 — it would make
         // the parent session's activity line flicker between agents.
         if dictionary["isSidechain"] as? Bool == true {
-            return TranscriptEvent(sessionId: sessionId, cwd: cwd, kind: .uninteresting, timestamp: timestamp)
+            return event(.uninteresting)
         }
 
         switch type {
         case "assistant":
             guard let message = dictionary["message"] as? [String: Any] else {
-                return TranscriptEvent(sessionId: sessionId, cwd: cwd, kind: .uninteresting, timestamp: timestamp)
+                return event(.uninteresting)
             }
-            return TranscriptEvent(
-                sessionId: sessionId,
-                cwd: cwd,
-                kind: .assistantActivity(parseAssistantMessage(message)),
-                timestamp: timestamp
-            )
+            return event(.assistantActivity(parseAssistantMessage(message)))
         case "user":
-            let kind: TranscriptEvent.Kind = isToolResult(dictionary["message"]) ? .toolResult : .userPrompt
-            return TranscriptEvent(sessionId: sessionId, cwd: cwd, kind: kind, timestamp: timestamp)
+            return event(isToolResult(dictionary["message"]) ? .toolResult : .userPrompt)
         default:
             // summary lines, system lines, future line types…
-            return TranscriptEvent(sessionId: sessionId, cwd: cwd, kind: .uninteresting, timestamp: timestamp)
+            return event(.uninteresting)
         }
     }
 

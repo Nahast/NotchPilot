@@ -30,6 +30,10 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
     public var isRoutine: Bool
     /// Pull request attached to this session, if any.
     public var pullRequest: PullRequestInfo?
+    /// Model id from the latest assistant message ("claude-opus-4-8").
+    public var model: String?
+    /// Git branch the session is working on.
+    public var gitBranch: String?
 
     public init(
         id: String,
@@ -44,7 +48,9 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
         name: String? = nil,
         isActive: Bool = true,
         isRoutine: Bool = false,
-        pullRequest: PullRequestInfo? = nil
+        pullRequest: PullRequestInfo? = nil,
+        model: String? = nil,
+        gitBranch: String? = nil
     ) {
         self.id = id
         self.projectPath = projectPath
@@ -59,6 +65,8 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
         self.isActive = isActive
         self.isRoutine = isRoutine
         self.pullRequest = pullRequest
+        self.model = model
+        self.gitBranch = gitBranch
     }
 
     /// Folder name of the working directory.

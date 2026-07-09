@@ -56,8 +56,10 @@ final class DemoProvider: AgentProvider {
                 contextWindowTokens: 200_000,
                 stateChangedAt: now.addingTimeInterval(-95),
                 lastActivityAt: now,
-                name: "backlog-tick",
-                isRoutine: true
+                name: "Backlog tick",
+                isRoutine: true,
+                model: "claude-fable-5",
+                gitBranch: "main"
             ),
             AgentSession(
                 id: "demo-api",
@@ -68,7 +70,9 @@ final class DemoProvider: AgentProvider {
                 contextWindowTokens: 200_000,
                 stateChangedAt: now.addingTimeInterval(-Double(40 + tick * 6)),
                 lastActivityAt: now,
-                name: "warp-api-3f"
+                name: "One notch, one glance",
+                model: "claude-opus-4-8",
+                gitBranch: "main"
             ),
             AgentSession(
                 id: "demo-web",
@@ -82,7 +86,9 @@ final class DemoProvider: AgentProvider {
                 stateChangedAt: now.addingTimeInterval(-Double(170 + (tick % 3) * 30)),
                 lastActivityAt: now,
                 name: "Fix login flow",
-                pullRequest: PullRequestInfo(number: 42, state: .open)
+                pullRequest: PullRequestInfo(number: 42, state: .open),
+                model: "claude-opus-4-8",
+                gitBranch: "WARP/login-fix"
             ),
             AgentSession(
                 id: "demo-docs",

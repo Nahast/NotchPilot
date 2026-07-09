@@ -9,6 +9,7 @@ public final class SettingsStore: ObservableObject {
         static let didCompleteOnboarding = "didCompleteOnboarding"
         static let hooksConsentGranted = "hooksConsentGranted"
         static let demoMode = "demoMode"
+        static let showUsage = "showUsage"
     }
 
     private let defaults: UserDefaults
@@ -37,6 +38,12 @@ public final class SettingsStore: ObservableObject {
         didSet { defaults.set(demoMode, forKey: Keys.demoMode) }
     }
 
+    /// Show Claude rate-limit usage in the panel (fetched from Anthropic's
+    /// usage endpoint using Claude Code's own credentials).
+    @Published public var showUsage: Bool {
+        didSet { defaults.set(showUsage, forKey: Keys.showUsage) }
+    }
+
     public var stalenessTimeout: TimeInterval {
         TimeInterval(max(1, stalenessTimeoutMinutes)) * 60
     }
@@ -49,11 +56,13 @@ public final class SettingsStore: ObservableObject {
             Keys.didCompleteOnboarding: false,
             Keys.hooksConsentGranted: false,
             Keys.demoMode: false,
+            Keys.showUsage: true,
         ])
         autoPeek = defaults.bool(forKey: Keys.autoPeek)
         stalenessTimeoutMinutes = defaults.integer(forKey: Keys.stalenessTimeoutMinutes)
         didCompleteOnboarding = defaults.bool(forKey: Keys.didCompleteOnboarding)
         hooksConsentGranted = defaults.bool(forKey: Keys.hooksConsentGranted)
         demoMode = defaults.bool(forKey: Keys.demoMode)
+        showUsage = defaults.bool(forKey: Keys.showUsage)
     }
 }

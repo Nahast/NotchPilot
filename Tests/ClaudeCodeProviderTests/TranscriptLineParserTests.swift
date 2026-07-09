@@ -22,6 +22,7 @@ final class TranscriptLineParserTests: XCTestCase {
         XCTAssertNotNil(event.timestamp, "line timestamp must be parsed")
         // 2026-07-08T10:00:00.000Z
         XCTAssertEqual(event.timestamp?.timeIntervalSince1970, 1_783_504_800)
+        XCTAssertEqual(event.gitBranch, "main")
         guard case let .assistantActivity(activity) = event.kind else {
             return XCTFail("expected assistantActivity, got \(event.kind)")
         }

@@ -28,6 +28,7 @@ struct SettingsView: View {
                         LaunchAtLogin.setEnabled(newValue)
                     }
                 Toggle("Auto-peek when a session needs attention", isOn: $settings.autoPeek)
+                Toggle("Show Claude usage limits", isOn: $settings.showUsage)
                 Stepper(
                     "Remove stale sessions after \(settings.stalenessTimeoutMinutes) min",
                     value: $settings.stalenessTimeoutMinutes,
@@ -72,9 +73,13 @@ struct SettingsView: View {
             Section("About") {
                 Text("NotchPilot \(appVersion)")
                     .font(.callout)
-                Text("100% local processing. The only network traffic is the Sparkle update check.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text("""
+                Local processing. Network traffic: the Sparkle update check, \
+                and — when usage limits are shown — Anthropic's usage endpoint, \
+                queried with Claude Code's own credentials from your Keychain.
+                """)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
