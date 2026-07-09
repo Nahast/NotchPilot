@@ -61,6 +61,12 @@ public struct ExpandedPanelView: View {
             )
             .clipShape(RoundedRectangle(cornerRadius: 14))
         )
+        // DynamicNotchKit reserves ~30pt (safe-area + corner padding) of its
+        // black shape around the expanded content; pull the card outward so
+        // only a hairline black rim remains. Floating style lays out
+        // differently and keeps its normal margins.
+        .padding(.horizontal, model.showsAsFloatingPill ? 0 : -26)
+        .padding(.bottom, model.showsAsFloatingPill ? 0 : -10)
     }
 
     private var header: some View {
