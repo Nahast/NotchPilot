@@ -41,7 +41,7 @@ public final class DynamicNotchKitPresenter: NotchPresenter {
     /// DynamicNotchKit paints an opaque black notch shape internally, so the
     /// translucency is applied at the window level; the compact state stays
     /// fully opaque to keep blending with the physical notch.
-    private let expandedWindowAlpha: CGFloat = 0.86
+    private let expandedWindowAlpha: CGFloat = 0.93
 
     private func applyWindowAlpha(_ alpha: CGFloat) {
         notch?.windowController?.window?.alphaValue = alpha
