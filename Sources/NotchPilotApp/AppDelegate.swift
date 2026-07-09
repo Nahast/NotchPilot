@@ -33,6 +33,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings = SettingsStore()
         let demoMode = CommandLine.arguments.contains("--demo") || settings.demoMode
 
+        // Scriptable setup: `open NotchPilot.app --args --enable-launch-at-login`
+        if CommandLine.arguments.contains("--enable-launch-at-login") {
+            LaunchAtLogin.setEnabled(true)
+            NSLog("NotchPilot: launch at login now %@", LaunchAtLogin.isEnabled ? "enabled" : "NOT enabled")
+        }
+
         let helperURL = HelperDeployer.deployIfNeeded() ?? ClaudeCodePaths.defaultHelperInstallURL
         hookInstaller = HookInstaller(
             settingsURL: ClaudeCodePaths.defaultClaudeHome.appendingPathComponent("settings.json"),
