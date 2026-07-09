@@ -14,7 +14,7 @@ public struct CompactStatusView: View {
     private let side: Side
 
     /// The compact area is small; beyond this many dots the tail is dropped.
-    private static let maxDots = 8
+    private static let maxDots = 16
 
     public init(model: NotchViewModel, side: Side) {
         self.model = model
@@ -22,7 +22,7 @@ public struct CompactStatusView: View {
     }
 
     public var body: some View {
-        HStack(spacing: 3.5) {
+        HStack(spacing: 2.5) {
             switch side {
             case .leading:
                 let running = model.runningSessions
@@ -32,11 +32,16 @@ public struct CompactStatusView: View {
                         .font(.system(size: 9))
                         .foregroundStyle(Color.white.opacity(0.35))
                 } else {
-                    ForEach(running.prefix(Self.maxDots)) { session in
-                        AgentDot(
-                            kind: session.agentKind,
-                            pulsing: session.status == .needsAttention
-                        )
+                    // Small dots stacked two per column.
+                    ForEach(Self.columns(of: Array(running.prefix(Self.maxDots))), id: \.first!.id) { column in
+                        VStack(spacing: 2.5) {
+                            ForEach(column) { session in
+                                AgentDot(
+                                    kind: session.agentKind,
+                                    pulsing: session.status == .needsAttention
+                                )
+                            }
+                        }
                     }
                 }
             case .trailing:
@@ -46,6 +51,13 @@ public struct CompactStatusView: View {
         }
         .padding(.horizontal, 2)
         .environment(\.colorScheme, .dark)
+    }
+
+    /// Chunks sessions into vertical pairs: [a b c d e] → [[a b] [c d] [e]].
+    static func columns(of sessions: [AgentSession]) -> [[AgentSession]] {
+        stride(from: 0, to: sessions.count, by: 2).map {
+            Array(sessions[$0..<min($0 + 2, sessions.count)])
+        }
     }
 }
 
@@ -70,7 +82,7 @@ struct AgentDot: View {
     var body: some View {
         Circle()
             .fill(AgentBrandColor.color(for: kind))
-            .frame(width: 6.5, height: 6.5)
+            .frame(width: 4.5, height: 4.5)
             .opacity(pulsing && dimmed ? 0.25 : 1)
             .onAppear {
                 guard pulsing else { return }
