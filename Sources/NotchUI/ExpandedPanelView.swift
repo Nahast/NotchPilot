@@ -86,16 +86,46 @@ public struct ExpandedPanelView: View {
     }
 
     /// Many sessions → cap height and scroll (design spec §5).
+    /// Grouped by liveness; routines are already sorted to the top of each
+    /// group by the provider.
     private var sessionList: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 2) {
-                ForEach(model.sessions) { session in
-                    SessionRowView(session: session) { tapped in
-                        model.onJump?(tapped)
+            VStack(alignment: .leading, spacing: 2) {
+                if !model.activeSessions.isEmpty {
+                    sectionHeader("Active", count: model.activeSessions.count)
+                    ForEach(model.activeSessions) { session in
+                        SessionRowView(session: session) { tapped in
+                            model.onJump?(tapped)
+                        }
+                    }
+                }
+                if !model.inactiveSessions.isEmpty {
+                    sectionHeader("Inactive", count: model.inactiveSessions.count)
+                        .padding(.top, model.activeSessions.isEmpty ? 0 : 6)
+                    ForEach(model.inactiveSessions) { session in
+                        SessionRowView(session: session) { tapped in
+                            model.onJump?(tapped)
+                        }
                     }
                 }
             }
         }
         .frame(maxHeight: 320)
+    }
+
+    private func sectionHeader(_ title: String, count: Int) -> some View {
+        HStack(spacing: 5) {
+            Text(title.uppercased())
+                .font(.system(size: 9, weight: .semibold))
+                .kerning(0.8)
+            Text("\(count)")
+                .font(.system(size: 9, weight: .semibold))
+                .monospacedDigit()
+                .padding(.horizontal, 4)
+                .background(Capsule().fill(Color.white.opacity(0.12)))
+        }
+        .foregroundStyle(Color.white.opacity(0.4))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
     }
 }

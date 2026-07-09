@@ -19,6 +19,8 @@ public final class ClaudeCodeProvider: AgentProvider {
         /// Whether our hooks are currently registered in settings.json —
         /// false means the provider labels itself "limited mode".
         public var hooksInstalled: () -> Bool
+        /// PID liveness check for the session registry (injectable for tests).
+        public var isProcessAlive: (Int32) -> Bool
 
         public init(
             claudeHome: URL = ClaudeCodePaths.defaultClaudeHome,
@@ -26,7 +28,8 @@ public final class ClaudeCodeProvider: AgentProvider {
             stalenessTimeout: @escaping () -> TimeInterval = { 30 * 60 },
             pollInterval: TimeInterval = 2.0,
             fsEventsLatency: TimeInterval = 0.2,
-            hooksInstalled: @escaping () -> Bool = { false }
+            hooksInstalled: @escaping () -> Bool = { false },
+            isProcessAlive: @escaping (Int32) -> Bool = SessionRegistryReader.defaultLivenessCheck
         ) {
             self.claudeHome = claudeHome
             self.eventsDirectory = eventsDirectory
@@ -34,6 +37,7 @@ public final class ClaudeCodeProvider: AgentProvider {
             self.pollInterval = pollInterval
             self.fsEventsLatency = fsEventsLatency
             self.hooksInstalled = hooksInstalled
+            self.isProcessAlive = isProcessAlive
         }
     }
 
@@ -83,6 +87,10 @@ public final class ClaudeCodeProvider: AgentProvider {
             } else if FileManager.default.fileExists(atPath: self.configuration.claudeHome.path) {
                 // projects/ appears after the first session; watch the parent.
                 watchPaths.append(self.configuration.claudeHome.path)
+            }
+            // Session registry: files appear/disappear as sessions open/close.
+            if FileManager.default.fileExists(atPath: self.sessionsRegistryDirectory.path) {
+                watchPaths.append(self.sessionsRegistryDirectory.path)
             }
 
             let watcher = FSEventsWatcher(
@@ -136,11 +144,20 @@ public final class ClaudeCodeProvider: AgentProvider {
         configuration.claudeHome.appendingPathComponent("projects", isDirectory: true)
     }
 
+    private var sessionsRegistryDirectory: URL {
+        configuration.claudeHome.appendingPathComponent("sessions", isDirectory: true)
+    }
+
     // MARK: Scanning (queue-confined)
 
     private func scan() {
+        let registry = SessionRegistryReader(
+            directory: sessionsRegistryDirectory,
+            isProcessAlive: configuration.isProcessAlive
+        ).aliveEntries()
+        store.applyRegistry(registry)
         processHookEvents()
-        scanTranscripts()
+        scanTranscripts(aliveSessionIds: Set(registry.keys))
         store.reapStale(timeout: configuration.stalenessTimeout())
         store.recomputeLimitedStatuses()
         publishIfChanged()
@@ -172,7 +189,7 @@ public final class ClaudeCodeProvider: AgentProvider {
         }
     }
 
-    private func scanTranscripts() {
+    private func scanTranscripts(aliveSessionIds: Set<String>) {
         let fileManager = FileManager.default
         let projectsDir = projectsDirectory
         guard let enumerator = fileManager.enumerator(
@@ -186,16 +203,19 @@ public final class ClaudeCodeProvider: AgentProvider {
         for case let url as URL in enumerator {
             guard url.pathExtension == "jsonl" else { continue }
             let path = url.path
+            let transcriptSessionId = url.deletingPathExtension().lastPathComponent
 
             // Don't parse historical transcripts that predate the staleness
-            // window — but keep tailing files we already track.
-            if !tailer.isKnown(path) {
+            // window — unless the session's process is alive (an open-but-
+            // quiet session still deserves its activity + gauge) — and keep
+            // tailing files we already track.
+            if !tailer.isKnown(path), !aliveSessionIds.contains(transcriptSessionId) {
                 let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
                     .contentModificationDate ?? .distantPast
                 guard modified >= staleCutoff else { continue }
             }
 
-            let fallbackSessionId = url.deletingPathExtension().lastPathComponent
+            let fallbackSessionId = transcriptSessionId
             let fallbackProjectPath = url.deletingLastPathComponent().lastPathComponent
 
             for lineData in tailer.readNewLines(at: path) {

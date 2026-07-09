@@ -48,6 +48,18 @@ final class DemoProvider: AgentProvider {
         ]
         var sessions = [
             AgentSession(
+                id: "demo-routine",
+                projectPath: "/Users/romain/Projects/warp-api",
+                status: .working,
+                activity: "Running: /backlog-tick",
+                contextUsedTokens: 48_000,
+                contextWindowTokens: 200_000,
+                stateChangedAt: now.addingTimeInterval(-95),
+                lastActivityAt: now,
+                name: "backlog-tick",
+                isRoutine: true
+            ),
+            AgentSession(
                 id: "demo-api",
                 projectPath: "/Users/romain/Projects/warp-api",
                 status: .working,
@@ -55,7 +67,8 @@ final class DemoProvider: AgentProvider {
                 contextUsedTokens: min(30_000 + tick * 9_000, 190_000),
                 contextWindowTokens: 200_000,
                 stateChangedAt: now.addingTimeInterval(-Double(40 + tick * 6)),
-                lastActivityAt: now
+                lastActivityAt: now,
+                name: "warp-api-3f"
             ),
             AgentSession(
                 id: "demo-web",
@@ -67,7 +80,8 @@ final class DemoProvider: AgentProvider {
                 contextUsedTokens: 152_000,
                 contextWindowTokens: 200_000,
                 stateChangedAt: now.addingTimeInterval(-Double(170 + (tick % 3) * 30)),
-                lastActivityAt: now
+                lastActivityAt: now,
+                name: "webapp-a1"
             ),
             AgentSession(
                 id: "demo-docs",
@@ -77,10 +91,13 @@ final class DemoProvider: AgentProvider {
                 contextUsedTokens: 61_000,
                 contextWindowTokens: 200_000,
                 stateChangedAt: now.addingTimeInterval(-540),
-                lastActivityAt: now.addingTimeInterval(-540)
+                lastActivityAt: now.addingTimeInterval(-540),
+                name: "docs-9c",
+                isActive: false
             ),
         ]
-        // Keep the spec's compact-view sort: attention, working, idle.
+        // Mirror the provider's sort: active first, routines pinned, then
+        // attention, working, idle.
         sessions.sort { lhs, rhs in
             func rank(_ status: AgentStatus) -> Int {
                 switch status {
@@ -89,6 +106,8 @@ final class DemoProvider: AgentProvider {
                 case .idle: return 2
                 }
             }
+            if lhs.isActive != rhs.isActive { return lhs.isActive }
+            if lhs.isRoutine != rhs.isRoutine { return lhs.isRoutine }
             return rank(lhs.status) < rank(rhs.status)
         }
         return sessions

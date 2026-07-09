@@ -34,8 +34,32 @@ final class ClaudeCodeProviderIntegrationTests: XCTestCase {
             stalenessTimeout: { 30 * 60 },
             pollInterval: 0.15,
             fsEventsLatency: 0.05,
-            hooksInstalled: { true }
+            hooksInstalled: { true },
+            isProcessAlive: { [weak self] pid in self?.alivePids.contains(pid) ?? false }
         ))
+    }
+
+    /// PIDs the fake liveness check reports as running.
+    private var alivePids: Set<Int32> = []
+
+    private func writeRegistryFile(
+        pid: Int32,
+        sessionId: String,
+        kind: String = "interactive",
+        name: String
+    ) throws {
+        let dir = claudeHome.appendingPathComponent("sessions", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let payload: [String: Any] = [
+            "pid": Int(pid),
+            "sessionId": sessionId,
+            "kind": kind,
+            "entrypoint": "claude-desktop",
+            "name": name,
+            "cwd": "/Users/romain/Projects/demo",
+        ]
+        try JSONSerialization.data(withJSONObject: payload)
+            .write(to: dir.appendingPathComponent("\(pid).json"))
     }
 
     override func tearDownWithError() throws {
@@ -165,6 +189,36 @@ final class ClaudeCodeProviderIntegrationTests: XCTestCase {
         provider.start()
         waitForSessions(description: "existing transcript discovered") { sessions in
             sessions.first?.activity == "Editing pre.swift…"
+        }
+    }
+
+    func testRegistrySessionActiveNamedThenInactiveOnProcessExit() throws {
+        alivePids = [4242]
+        try writeRegistryFile(pid: 4242, sessionId: sessionId, name: "demo-a1")
+        provider.start()
+
+        waitForSessions(description: "registry session active with name") { sessions in
+            sessions.count == 1
+                && sessions[0].name == "demo-a1"
+                && sessions[0].isActive
+        }
+
+        alivePids = [] // process exits
+        waitForSessions(description: "flips to inactive") { sessions in
+            sessions.first?.isActive == false && sessions.first?.status == .idle
+        }
+    }
+
+    func testRoutineRegistrySessionIsPinnedFirst() throws {
+        alivePids = [1000, 2000]
+        try writeRegistryFile(pid: 1000, sessionId: "aaaa-interactive", name: "droplet-a1")
+        try writeRegistryFile(pid: 2000, sessionId: "bbbb-routine", kind: "scheduled", name: "backlog-tick")
+        provider.start()
+
+        waitForSessions(description: "routine pinned first") { sessions in
+            sessions.count == 2
+                && sessions[0].id == "bbbb-routine"
+                && sessions[0].isRoutine
         }
     }
 }

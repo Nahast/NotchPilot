@@ -19,6 +19,9 @@ final class TranscriptLineParserTests: XCTestCase {
         let event = try XCTUnwrap(TranscriptLineParser.parse(assistantToolUseLine))
         XCTAssertEqual(event.sessionId, "11111111-1111-1111-1111-111111111111")
         XCTAssertEqual(event.cwd, "/Users/romain/Projects/demo")
+        XCTAssertNotNil(event.timestamp, "line timestamp must be parsed")
+        // 2026-07-08T10:00:00.000Z
+        XCTAssertEqual(event.timestamp?.timeIntervalSince1970, 1_783_504_800)
         guard case let .assistantActivity(activity) = event.kind else {
             return XCTFail("expected assistantActivity, got \(event.kind)")
         }

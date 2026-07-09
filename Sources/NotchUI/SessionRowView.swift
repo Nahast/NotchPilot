@@ -15,10 +15,22 @@ struct SessionRowView: View {
                 .padding(.top, 2)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(session.projectName)
+                    if session.isRoutine {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.cyan)
+                            .help("Routine (scheduled run)")
+                    }
+                    Text(session.displayName)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white)
                         .lineLimit(1)
+                    if session.name != nil, session.projectName != session.displayName {
+                        Text(session.projectName)
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.white.opacity(0.4))
+                            .lineLimit(1)
+                    }
                     Spacer(minLength: 4)
                     TimelineView(.periodic(from: .now, by: 10)) { context in
                         Text(Self.stateDurationText(for: session, now: context.date))
@@ -38,6 +50,7 @@ struct SessionRowView: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
+        .opacity(session.isActive ? 1 : 0.55)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(hovering ? Color.white.opacity(0.09) : Color.clear)
@@ -45,7 +58,7 @@ struct SessionRowView: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { onJump(session) }
-        .help("Click to jump to this session")
+        .help("Click to jump to this session — \(session.projectPath)")
     }
 
     private var activityText: String {
@@ -55,7 +68,7 @@ struct SessionRowView: View {
         switch session.status {
         case .working: return "Working…"
         case .needsAttention: return "Waiting for your approval"
-        case .idle: return "Done"
+        case .idle: return session.isActive ? "Idle" : "Closed"
         }
     }
 

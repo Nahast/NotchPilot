@@ -20,6 +20,13 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
     public var lastActivityAt: Date
     /// True when the status was derived from transcript heuristics only (no hooks).
     public var isLimitedMode: Bool
+    /// Human session name from the provider's session registry ("droplet-a1").
+    public var name: String?
+    /// True while the session's process is alive (or its activity is very
+    /// recent when no registry entry exists). Drives Active/Inactive grouping.
+    public var isActive: Bool
+    /// True for scheduled/background runs (routines) — pinned to the top.
+    public var isRoutine: Bool
 
     public init(
         id: String,
@@ -30,7 +37,10 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
         contextWindowTokens: Int? = nil,
         stateChangedAt: Date,
         lastActivityAt: Date,
-        isLimitedMode: Bool = false
+        isLimitedMode: Bool = false,
+        name: String? = nil,
+        isActive: Bool = true,
+        isRoutine: Bool = false
     ) {
         self.id = id
         self.projectPath = projectPath
@@ -41,12 +51,21 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
         self.stateChangedAt = stateChangedAt
         self.lastActivityAt = lastActivityAt
         self.isLimitedMode = isLimitedMode
+        self.name = name
+        self.isActive = isActive
+        self.isRoutine = isRoutine
     }
 
-    /// Folder name of the working directory, used as the display name.
+    /// Folder name of the working directory.
     public var projectName: String {
         let name = (projectPath as NSString).lastPathComponent
         return name.isEmpty ? projectPath : name
+    }
+
+    /// Row title: the session's own name when known, else the folder name.
+    public var displayName: String {
+        if let name, !name.isEmpty { return name }
+        return projectName
     }
 
     /// Fraction (0...1) of the context window consumed, if both numbers are known.

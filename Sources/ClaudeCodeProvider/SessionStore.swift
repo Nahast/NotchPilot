@@ -10,7 +10,13 @@ final class SessionStore {
         var hookDriven: Bool
         /// Assistant issued a tool_use and no tool_result arrived yet.
         var pendingToolUse: Bool
+        /// This session was seen in the live session registry at some point.
+        var hadRegistryEntry = false
     }
+
+    /// Sessions with no registry entry stay "active" for this long after
+    /// their last signal (covers headless runs that never register).
+    static let activeGraceWindow: TimeInterval = 120
 
     private(set) var entries: [String: Entry] = [:]
     /// Injectable clock for tests.
@@ -81,13 +87,14 @@ final class SessionStore {
     ) {
         let sessionId = event.sessionId ?? fallbackSessionId
         guard !sessionId.isEmpty else { return }
+        // Prefer the line's own timestamp: parsing a pre-existing transcript
+        // at launch must not look like fresh activity.
+        let timestamp = event.timestamp ?? now()
         if case .uninteresting = event.kind {
             // Still counts as file activity for staleness purposes.
-            touch(sessionId: sessionId)
+            touch(sessionId: sessionId, at: timestamp)
             return
         }
-
-        let timestamp = now()
         var entry = entries[sessionId] ?? Entry(
             session: AgentSession(
                 id: sessionId,
@@ -148,20 +155,75 @@ final class SessionStore {
         entries[sessionId] = entry
     }
 
-    private func touch(sessionId: String) {
+    private func touch(sessionId: String, at timestamp: Date) {
         guard var entry = entries[sessionId] else { return }
-        entry.session.lastActivityAt = now()
+        entry.session.lastActivityAt = max(entry.session.lastActivityAt, timestamp)
         entries[sessionId] = entry
+    }
+
+    // MARK: Session registry (live processes)
+
+    /// Merges Claude Code's live session registry: alive sessions get their
+    /// name/kind and are marked active; sessions that used to be registered
+    /// but no longer are (process exited) flip to inactive + idle. Sessions
+    /// never registered fall back to a recent-activity grace window.
+    func applyRegistry(_ alive: [String: SessionRegistryEntry]) {
+        let timestamp = now()
+
+        // Ensure every alive registered session exists and is up to date.
+        for (sessionId, registration) in alive {
+            var entry = entries[sessionId] ?? Entry(
+                session: AgentSession(
+                    id: sessionId,
+                    projectPath: registration.cwd ?? "",
+                    status: .idle,
+                    stateChangedAt: timestamp,
+                    lastActivityAt: timestamp,
+                    isLimitedMode: true
+                ),
+                hookDriven: false,
+                pendingToolUse: false
+            )
+            entry.hadRegistryEntry = true
+            entry.session.isActive = true
+            entry.session.name = registration.name ?? entry.session.name
+            entry.session.isRoutine = registration.isRoutine
+            if entry.session.projectPath.isEmpty, let cwd = registration.cwd {
+                entry.session.projectPath = cwd
+            }
+            entries[sessionId] = entry
+        }
+
+        // Everything else: previously-registered sessions whose process died
+        // are inactive (and can't still be working); unregistered sessions
+        // stay active only within the grace window.
+        for (sessionId, var entry) in entries where alive[sessionId] == nil {
+            let wasActive = entry.session.isActive
+            if entry.hadRegistryEntry {
+                entry.session.isActive = false
+            } else {
+                let age = timestamp.timeIntervalSince(entry.session.lastActivityAt)
+                entry.session.isActive = age <= Self.activeGraceWindow
+            }
+            if wasActive, !entry.session.isActive, entry.session.status != .idle {
+                entry.session.status = .idle
+                entry.session.stateChangedAt = timestamp
+            }
+            entries[sessionId] = entry
+        }
     }
 
     // MARK: Maintenance
 
     /// Removes sessions with no activity for `timeout` seconds
-    /// (crashed CLI / missing SessionEnd). Returns true if anything changed.
+    /// (crashed CLI / missing SessionEnd). Sessions whose process is alive
+    /// (active) are never reaped — an open-but-quiet session is still open.
     @discardableResult
     func reapStale(timeout: TimeInterval) -> Bool {
         let cutoff = now().addingTimeInterval(-timeout)
-        let stale = entries.filter { $0.value.session.lastActivityAt < cutoff }.keys
+        let stale = entries.filter {
+            !$0.value.session.isActive && $0.value.session.lastActivityAt < cutoff
+        }.keys
         guard !stale.isEmpty else { return false }
         for key in stale { entries[key] = nil }
         return true
@@ -178,7 +240,9 @@ final class SessionStore {
     ) -> Bool {
         var changed = false
         let currentTime = now()
-        for (key, var entry) in entries where !entry.hookDriven {
+        // Heuristics apply to transcript-only sessions that are still running;
+        // a dead process must stay idle no matter how fresh its last write is.
+        for (key, var entry) in entries where !entry.hookDriven && entry.session.isActive {
             entry.session.isLimitedMode = true
             let age = currentTime.timeIntervalSince(entry.session.lastActivityAt)
             let derived: AgentStatus
@@ -207,8 +271,9 @@ final class SessionStore {
         return changed
     }
 
-    /// Sorted snapshot: needs-attention first (longest wait first), then
-    /// working, then idle; stable by project name within a class.
+    /// Sorted snapshot: active before inactive; routines pinned to the top of
+    /// their group; then needs-attention first (longest wait first), working,
+    /// idle; stable by display name within a class.
     func snapshot() -> [AgentSession] {
         func rank(_ status: AgentStatus) -> Int {
             switch status {
@@ -218,13 +283,19 @@ final class SessionStore {
             }
         }
         return entries.values.map(\.session).sorted { lhs, rhs in
+            if lhs.isActive != rhs.isActive {
+                return lhs.isActive
+            }
+            if lhs.isRoutine != rhs.isRoutine {
+                return lhs.isRoutine
+            }
             if rank(lhs.status) != rank(rhs.status) {
                 return rank(lhs.status) < rank(rhs.status)
             }
             if lhs.stateChangedAt != rhs.stateChangedAt {
                 return lhs.stateChangedAt < rhs.stateChangedAt
             }
-            return lhs.projectName.localizedCaseInsensitiveCompare(rhs.projectName) == .orderedAscending
+            return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
         }
     }
 }

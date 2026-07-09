@@ -98,6 +98,8 @@ final class SessionStoreTests: XCTestCase {
     func testStaleSessionIsReaped() {
         store.apply(hook: hookEvent(.sessionStart))
         advance(31 * 60)
+        // The provider pipeline always resolves liveness before reaping.
+        store.applyRegistry([:])
         store.reapStale(timeout: 30 * 60)
         XCTAssertTrue(store.snapshot().isEmpty)
     }
@@ -170,5 +172,89 @@ final class SessionStoreTests: XCTestCase {
         store.apply(hook: hookEvent(.stop, session: "i", cwd: "/p/idle"))
         store.apply(hook: hookEvent(.notification, session: "a", cwd: "/p/attention"))
         XCTAssertEqual(store.snapshot().map(\.id), ["a", "w", "i"])
+    }
+
+    // MARK: Session registry
+
+    private func registryEntry(
+        session: String,
+        pid: Int32 = 1234,
+        kind: String = "interactive",
+        name: String? = nil,
+        cwd: String = "/Users/romain/Projects/demo"
+    ) -> SessionRegistryEntry {
+        SessionRegistryEntry(
+            sessionId: session,
+            pid: pid,
+            kind: kind,
+            entrypoint: "claude-desktop",
+            name: name,
+            cwd: cwd
+        )
+    }
+
+    func testRegistryCreatesActiveNamedSession() {
+        store.applyRegistry(["r1": registryEntry(session: "r1", name: "droplet-a1")])
+        let session = store.snapshot()[0]
+        XCTAssertEqual(session.name, "droplet-a1")
+        XCTAssertEqual(session.displayName, "droplet-a1")
+        XCTAssertTrue(session.isActive)
+        XCTAssertFalse(session.isRoutine)
+        XCTAssertEqual(session.status, .idle)
+    }
+
+    func testRegistryMarksRoutineFromNonInteractiveKind() {
+        store.applyRegistry(["r1": registryEntry(session: "r1", kind: "scheduled", name: "backlog-tick")])
+        XCTAssertTrue(store.snapshot()[0].isRoutine)
+    }
+
+    func testSessionGoesInactiveAndIdleWhenProcessDies() {
+        store.applyRegistry(["r1": registryEntry(session: "r1", name: "droplet-a1")])
+        store.apply(hook: hookEvent(.sessionStart, session: "r1"))
+        XCTAssertEqual(store.snapshot()[0].status, .working)
+
+        advance(10)
+        store.applyRegistry([:]) // process exited
+        let session = store.snapshot()[0]
+        XCTAssertFalse(session.isActive)
+        XCTAssertEqual(session.status, .idle, "a dead process can't still be working")
+        XCTAssertEqual(session.name, "droplet-a1", "name survives process exit")
+    }
+
+    func testAliveRegistrySessionIsNeverReaped() {
+        store.applyRegistry(["r1": registryEntry(session: "r1")])
+        advance(10 * 60 * 60) // 10 hours idle
+        store.applyRegistry(["r1": registryEntry(session: "r1")])
+        store.reapStale(timeout: 30 * 60)
+        XCTAssertEqual(store.snapshot().count, 1, "open-but-quiet sessions stay listed")
+    }
+
+    func testUnregisteredSessionUsesActivityGraceWindow() {
+        transcriptOnlySession()
+        store.applyRegistry([:])
+        XCTAssertTrue(store.snapshot()[0].isActive, "fresh activity keeps it active")
+
+        advance(SessionStore.activeGraceWindow + 60)
+        store.applyRegistry([:])
+        XCTAssertFalse(store.snapshot()[0].isActive, "grace window expired")
+    }
+
+    func testSnapshotOrdersActiveFirstAndRoutinesOnTop() {
+        // Inactive session with attention-worthy history.
+        store.apply(hook: hookEvent(.notification, session: "inactive-a", cwd: "/p/one"))
+        store.applyRegistry([
+            "work": registryEntry(session: "work", name: "droplet-a1"),
+            "routine": registryEntry(session: "routine", kind: "scheduled", name: "backlog-tick"),
+        ])
+        // "inactive-a" has no registry entry; age it past the grace window.
+        advance(SessionStore.activeGraceWindow + 60)
+        store.applyRegistry([
+            "work": registryEntry(session: "work", name: "droplet-a1"),
+            "routine": registryEntry(session: "routine", kind: "scheduled", name: "backlog-tick"),
+        ])
+
+        let ids = store.snapshot().map(\.id)
+        XCTAssertEqual(ids.first, "routine", "routines pinned to the very top")
+        XCTAssertEqual(ids.last, "inactive-a", "inactive sessions sink to the bottom")
     }
 }
