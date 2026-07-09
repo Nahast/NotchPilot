@@ -37,6 +37,16 @@ public final class DynamicNotchKitPresenter: NotchPresenter {
     private var peekTask: Task<Void, Never>?
     private var attentionSessionIds: Set<String> = []
 
+    /// The expanded panel is semi-transparent so the desktop shows through.
+    /// DynamicNotchKit paints an opaque black notch shape internally, so the
+    /// translucency is applied at the window level; the compact state stays
+    /// fully opaque to keep blending with the physical notch.
+    private let expandedWindowAlpha: CGFloat = 0.86
+
+    private func applyWindowAlpha(_ alpha: CGFloat) {
+        notch?.windowController?.window?.alphaValue = alpha
+    }
+
     public init(model: NotchViewModel, autoPeekEnabled: @escaping () -> Bool) {
         self.model = model
         self.autoPeekEnabled = autoPeekEnabled
@@ -82,8 +92,10 @@ public final class DynamicNotchKitPresenter: NotchPresenter {
             guard let self, let notch = self.notch else { return }
             if floating {
                 await notch.expand(on: screen)
+                self.applyWindowAlpha(self.expandedWindowAlpha)
             } else {
                 await notch.compact(on: screen)
+                self.applyWindowAlpha(1)
             }
         }
     }
@@ -95,12 +107,14 @@ public final class DynamicNotchKitPresenter: NotchPresenter {
         peekTask = Task { [weak self] in
             if self?.model.showsAsFloatingPill == false {
                 await notch.expand(on: screen)
+                self?.applyWindowAlpha(self?.expandedWindowAlpha ?? 1)
             }
             try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
             guard let self, !Task.isCancelled else { return }
             self.model.isPeeking = false
             if !self.model.isHovering, !self.model.showsAsFloatingPill {
                 await notch.compact(on: screen)
+                self.applyWindowAlpha(1)
             }
         }
     }
@@ -144,11 +158,13 @@ public final class DynamicNotchKitPresenter: NotchPresenter {
         // Floating pill: the window stays expanded; the content itself swaps
         // between pill and panel from `model.isHovering`.
         guard !model.showsAsFloatingPill else { return }
-        Task {
+        Task { [weak self] in
             if hovering {
                 await notch.expand(on: screen)
-            } else if !self.model.isPeeking {
+                self?.applyWindowAlpha(self?.expandedWindowAlpha ?? 1)
+            } else if self?.model.isPeeking == false {
                 await notch.compact(on: screen)
+                self?.applyWindowAlpha(1)
             }
         }
     }

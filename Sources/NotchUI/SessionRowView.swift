@@ -175,7 +175,8 @@ struct SessionRowView: View {
     }
 }
 
-/// Leading status dot: green working, orange (pulsing) attention, dim idle.
+/// Leading status dot: green working, orange (pulsing) attention.
+/// Idle rows show nothing — an invisible placeholder keeps titles aligned.
 struct StatusDotView: View {
     let status: AgentStatus
     let isActive: Bool
@@ -196,7 +197,7 @@ struct StatusDotView: View {
                         }
                     }
             case .idle:
-                Circle().stroke(Color.white.opacity(0.3), lineWidth: 1.5)
+                Color.clear
             }
         }
         .frame(width: 9, height: 9)
