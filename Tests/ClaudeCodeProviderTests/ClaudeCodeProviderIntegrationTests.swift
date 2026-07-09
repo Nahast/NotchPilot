@@ -28,6 +28,9 @@ final class ClaudeCodeProviderIntegrationTests: XCTestCase {
         try FileManager.default.createDirectory(at: projectDir, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: eventsDir, withIntermediateDirectories: true)
 
+        desktopSessionsDir = fixtureRoot.appendingPathComponent("desktop-sessions", isDirectory: true)
+        try FileManager.default.createDirectory(at: desktopSessionsDir, withIntermediateDirectories: true)
+
         provider = ClaudeCodeProvider(configuration: .init(
             claudeHome: claudeHome,
             eventsDirectory: eventsDir,
@@ -35,8 +38,22 @@ final class ClaudeCodeProviderIntegrationTests: XCTestCase {
             pollInterval: 0.15,
             fsEventsLatency: 0.05,
             hooksInstalled: { true },
-            isProcessAlive: { [weak self] pid in self?.alivePids.contains(pid) ?? false }
+            isProcessAlive: { [weak self] pid in self?.alivePids.contains(pid) ?? false },
+            desktopSessionsDirectory: desktopSessionsDir
         ))
+    }
+
+    private var desktopSessionsDir: URL!
+
+    private func writeDesktopSessionFile(cliSessionId: String, title: String) throws {
+        let payload: [String: Any] = [
+            "sessionId": "local_\(UUID().uuidString)",
+            "cliSessionId": cliSessionId,
+            "title": title,
+            "lastActivityAt": Date().timeIntervalSince1970 * 1000,
+        ]
+        try JSONSerialization.data(withJSONObject: payload)
+            .write(to: desktopSessionsDir.appendingPathComponent("local_\(UUID().uuidString).json"))
     }
 
     /// PIDs the fake liveness check reports as running.
@@ -206,6 +223,17 @@ final class ClaudeCodeProviderIntegrationTests: XCTestCase {
         alivePids = [] // process exits
         waitForSessions(description: "flips to inactive") { sessions in
             sessions.first?.isActive == false && sessions.first?.status == .idle
+        }
+    }
+
+    func testDesktopTitleOverridesRegistryName() throws {
+        alivePids = [4242]
+        try writeRegistryFile(pid: 4242, sessionId: sessionId, name: "demo-a1")
+        try writeDesktopSessionFile(cliSessionId: sessionId, title: "Fix the login flow")
+        provider.start()
+
+        waitForSessions(description: "sidebar title shown") { sessions in
+            sessions.first?.displayName == "Fix the login flow"
         }
     }
 

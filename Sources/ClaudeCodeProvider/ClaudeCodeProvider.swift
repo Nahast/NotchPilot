@@ -21,6 +21,9 @@ public final class ClaudeCodeProvider: AgentProvider {
         public var hooksInstalled: () -> Bool
         /// PID liveness check for the session registry (injectable for tests).
         public var isProcessAlive: (Int32) -> Bool
+        /// Claude desktop app session store — source of the sidebar titles.
+        /// nil disables title lookup (CLI-only machines).
+        public var desktopSessionsDirectory: URL?
 
         public init(
             claudeHome: URL = ClaudeCodePaths.defaultClaudeHome,
@@ -29,7 +32,8 @@ public final class ClaudeCodeProvider: AgentProvider {
             pollInterval: TimeInterval = 2.0,
             fsEventsLatency: TimeInterval = 0.2,
             hooksInstalled: @escaping () -> Bool = { false },
-            isProcessAlive: @escaping (Int32) -> Bool = SessionRegistryReader.defaultLivenessCheck
+            isProcessAlive: @escaping (Int32) -> Bool = SessionRegistryReader.defaultLivenessCheck,
+            desktopSessionsDirectory: URL? = ClaudeCodePaths.defaultDesktopSessionsDirectory
         ) {
             self.claudeHome = claudeHome
             self.eventsDirectory = eventsDirectory
@@ -38,6 +42,7 @@ public final class ClaudeCodeProvider: AgentProvider {
             self.fsEventsLatency = fsEventsLatency
             self.hooksInstalled = hooksInstalled
             self.isProcessAlive = isProcessAlive
+            self.desktopSessionsDirectory = desktopSessionsDirectory
         }
     }
 
@@ -55,6 +60,7 @@ public final class ClaudeCodeProvider: AgentProvider {
     private let queue = DispatchQueue(label: "com.rjouffret.NotchPilot.ClaudeCodeProvider")
     private let store = SessionStore()
     private let tailer = TranscriptTailer()
+    private let titleReader: DesktopSessionTitleReader?
     private let sessionsSubject = CurrentValueSubject<[AgentSession], Never>([])
     private let limitedModeSubject = CurrentValueSubject<Bool, Never>(false)
     private var watchers: [FSEventsWatcher] = []
@@ -64,6 +70,8 @@ public final class ClaudeCodeProvider: AgentProvider {
 
     public init(configuration: Configuration = Configuration()) {
         self.configuration = configuration
+        self.titleReader = configuration.desktopSessionsDirectory
+            .map { DesktopSessionTitleReader(directory: $0) }
     }
 
     deinit {
@@ -91,6 +99,12 @@ public final class ClaudeCodeProvider: AgentProvider {
             // Session registry: files appear/disappear as sessions open/close.
             if FileManager.default.fileExists(atPath: self.sessionsRegistryDirectory.path) {
                 watchPaths.append(self.sessionsRegistryDirectory.path)
+            }
+            // Desktop app session store: titles are (re)generated as
+            // conversations progress.
+            if let desktopDir = self.configuration.desktopSessionsDirectory,
+               FileManager.default.fileExists(atPath: desktopDir.path) {
+                watchPaths.append(desktopDir.path)
             }
 
             let watcher = FSEventsWatcher(
@@ -150,7 +164,17 @@ public final class ClaudeCodeProvider: AgentProvider {
 
     // MARK: Scanning (queue-confined)
 
+    private var scheduledTasksDirectory: URL {
+        configuration.claudeHome.appendingPathComponent("scheduled-tasks", isDirectory: true)
+    }
+
     private func scan() {
+        // Scheduled-task names identify routine sessions by title match.
+        let taskNames = (try? FileManager.default.contentsOfDirectory(
+            atPath: scheduledTasksDirectory.path
+        )) ?? []
+        store.scheduledTaskNames = Set(taskNames.map(SessionStore.normalizeTaskName))
+
         let registry = SessionRegistryReader(
             directory: sessionsRegistryDirectory,
             isProcessAlive: configuration.isProcessAlive
@@ -158,6 +182,9 @@ public final class ClaudeCodeProvider: AgentProvider {
         store.applyRegistry(registry)
         processHookEvents()
         scanTranscripts(aliveSessionIds: Set(registry.keys))
+        if let titleReader {
+            store.applyDesktopTitles(titleReader.titlesBySessionId())
+        }
         store.reapStale(timeout: configuration.stalenessTimeout())
         store.recomputeLimitedStatuses()
         publishIfChanged()
@@ -268,6 +295,17 @@ public enum ClaudeCodePaths {
         defaultApplicationSupport
             .appendingPathComponent("bin", isDirectory: true)
             .appendingPathComponent("notchpilot-hook")
+    }
+
+    /// The Claude desktop app's Claude Code session store, which holds the
+    /// sidebar titles ("Automated development workflows").
+    public static var defaultDesktopSessionsDirectory: URL? {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("Library/Application Support", isDirectory: true)
+        return base
+            .appendingPathComponent("Claude", isDirectory: true)
+            .appendingPathComponent("claude-code-sessions", isDirectory: true)
     }
 
     /// True when Claude Code appears to be installed for this user.

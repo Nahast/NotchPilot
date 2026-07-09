@@ -73,7 +73,9 @@ changes.
 
 ## Privacy
 
-All processing happens on your Mac. NotchPilot reads `~/.claude` (transcripts
-and settings) and writes only to its own Application Support folder plus the
-hooks entries in `~/.claude/settings.json` (with backups). The only network
-traffic is the Sparkle update check against GitHub Releases.
+All processing happens on your Mac. NotchPilot reads `~/.claude` (transcripts,
+session registry, and settings) and the Claude desktop app's local session
+store (for the session titles you see in its sidebar), and writes only to its
+own Application Support folder plus the hooks entries in
+`~/.claude/settings.json` (with backups). The only network traffic is the
+Sparkle update check against GitHub Releases.

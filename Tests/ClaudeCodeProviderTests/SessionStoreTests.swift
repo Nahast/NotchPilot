@@ -239,6 +239,39 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertFalse(store.snapshot()[0].isActive, "grace window expired")
     }
 
+    func testDesktopTitleBeatsRegistryName() {
+        store.applyRegistry(["r1": registryEntry(session: "r1", name: "droplet-a1")])
+        store.applyDesktopTitles(["r1": "Automated development workflows"])
+        XCTAssertEqual(store.snapshot()[0].displayName, "Automated development workflows")
+
+        // Registry refresh must not clobber the desktop title.
+        store.applyRegistry(["r1": registryEntry(session: "r1", name: "droplet-a1")])
+        XCTAssertEqual(store.snapshot()[0].displayName, "Automated development workflows")
+    }
+
+    func testTitleForUnknownSessionIsIgnored() {
+        store.applyDesktopTitles(["ghost": "Some title"])
+        XCTAssertTrue(store.snapshot().isEmpty)
+    }
+
+    func testTitleMatchingScheduledTaskNameMarksRoutine() {
+        store.scheduledTaskNames = ["backlog-tick", "overnight-warp-ticket-implementation"]
+        store.applyRegistry(["r1": registryEntry(session: "r1", name: "droplet-35")])
+        XCTAssertFalse(store.snapshot()[0].isRoutine)
+
+        // The desktop title "Backlog tick" normalizes to the task name.
+        store.applyDesktopTitles(["r1": "Backlog tick"])
+        let session = store.snapshot()[0]
+        XCTAssertTrue(session.isRoutine)
+        XCTAssertEqual(session.displayName, "Backlog tick")
+    }
+
+    func testNormalizeTaskName() {
+        XCTAssertEqual(SessionStore.normalizeTaskName("Backlog tick"), "backlog-tick")
+        XCTAssertEqual(SessionStore.normalizeTaskName("backlog-tick"), "backlog-tick")
+        XCTAssertEqual(SessionStore.normalizeTaskName("  Overnight WARP Ticket—Implementation "), "overnight-warp-ticket-implementation")
+    }
+
     func testSnapshotOrdersActiveFirstAndRoutinesOnTop() {
         // Inactive session with attention-worthy history.
         store.apply(hook: hookEvent(.notification, session: "inactive-a", cwd: "/p/one"))

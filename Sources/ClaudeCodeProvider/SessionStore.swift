@@ -12,6 +12,42 @@ final class SessionStore {
         var pendingToolUse: Bool
         /// This session was seen in the live session registry at some point.
         var hadRegistryEntry = false
+        /// Short derived name from the session registry ("droplet-a1").
+        var registryName: String?
+        /// Sidebar title from the Claude desktop app — what the user actually
+        /// sees, so it wins over the registry name.
+        var desktopTitle: String?
+        /// The registry marked this session as a non-interactive run.
+        var registryIsRoutine = false
+
+        /// Applies the display-name precedence to the session value.
+        mutating func refreshName() {
+            session.name = desktopTitle ?? registryName
+        }
+    }
+
+    /// Normalized names of the user's scheduled tasks
+    /// (`~/.claude/scheduled-tasks/<name>/`). Routines launched from the
+    /// desktop app run as regular interactive sessions, but their generated
+    /// title matches the task name ("Backlog tick" → backlog-tick).
+    var scheduledTaskNames: Set<String> = []
+
+    static func normalizeTaskName(_ name: String) -> String {
+        name.lowercased()
+            .map { $0.isLetter || $0.isNumber ? String($0) : "-" }
+            .joined()
+            .split(separator: "-")
+            .joined(separator: "-")
+    }
+
+    private func isRoutine(_ entry: Entry) -> Bool {
+        if entry.registryIsRoutine { return true }
+        for candidate in [entry.desktopTitle, entry.registryName].compactMap({ $0 }) {
+            if scheduledTaskNames.contains(Self.normalizeTaskName(candidate)) {
+                return true
+            }
+        }
+        return false
     }
 
     /// Sessions with no registry entry stay "active" for this long after
@@ -186,8 +222,10 @@ final class SessionStore {
             )
             entry.hadRegistryEntry = true
             entry.session.isActive = true
-            entry.session.name = registration.name ?? entry.session.name
-            entry.session.isRoutine = registration.isRoutine
+            entry.registryName = registration.name ?? entry.registryName
+            entry.registryIsRoutine = registration.isRoutine
+            entry.refreshName()
+            entry.session.isRoutine = isRoutine(entry)
             if entry.session.projectPath.isEmpty, let cwd = registration.cwd {
                 entry.session.projectPath = cwd
             }
@@ -209,6 +247,21 @@ final class SessionStore {
                 entry.session.status = .idle
                 entry.session.stateChangedAt = timestamp
             }
+            entries[sessionId] = entry
+        }
+    }
+
+    // MARK: Desktop app titles
+
+    /// Applies sidebar titles from the Claude desktop app (session id →
+    /// title). Titles beat registry names; both survive process exit.
+    func applyDesktopTitles(_ titles: [String: String]) {
+        for (sessionId, title) in titles {
+            guard var entry = entries[sessionId] else { continue }
+            guard entry.desktopTitle != title else { continue }
+            entry.desktopTitle = title
+            entry.refreshName()
+            entry.session.isRoutine = isRoutine(entry)
             entries[sessionId] = entry
         }
     }
