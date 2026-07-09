@@ -76,6 +76,10 @@ public struct ExpandedPanelView: View {
                     .help("Hooks are not installed — statuses are heuristics from transcript activity only.")
             }
             Spacer()
+            if let tally = model.tokenTally, tally.tokens > 0 {
+                ChipView(text: "\(tally.formatted) today", icon: "bolt.fill")
+                    .help("Tokens consumed today across all sessions (input + output, cache reads excluded)")
+            }
             if model.attentionCount > 0 {
                 ChipView(
                     text: "\(model.attentionCount) needs you",

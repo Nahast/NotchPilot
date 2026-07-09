@@ -9,6 +9,7 @@ final class DemoProvider: AgentProvider {
 
     private let sessionsSubject = CurrentValueSubject<[AgentSession], Never>([])
     private let limitedSubject = CurrentValueSubject<Bool, Never>(false)
+    private let tallySubject = CurrentValueSubject<TokenTally?, Never>(TokenTally(tokens: 215_000))
     private var timer: Timer?
     private var tick = 0
 
@@ -18,6 +19,10 @@ final class DemoProvider: AgentProvider {
 
     var isLimitedModePublisher: AnyPublisher<Bool, Never> {
         limitedSubject.eraseToAnyPublisher()
+    }
+
+    var tokenTallyPublisher: AnyPublisher<TokenTally?, Never> {
+        tallySubject.eraseToAnyPublisher()
     }
 
     func start() {

@@ -276,6 +276,56 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(store.snapshot()[0].pullRequest?.state, .open)
     }
 
+    // MARK: Token tally
+
+    private func applyAssistantTokens(
+        session: String = "s1",
+        messageId: String,
+        newTokens: Int,
+        at timestamp: Date? = nil
+    ) {
+        let activity = AssistantActivity(messageId: messageId, newTokens: newTokens)
+        store.apply(
+            transcript: TranscriptEvent(
+                sessionId: session,
+                cwd: nil,
+                kind: .assistantActivity(activity),
+                timestamp: timestamp ?? clock
+            ),
+            fallbackSessionId: session,
+            fallbackProjectPath: "demo"
+        )
+    }
+
+    func testTallyAccumulatesTodaysTokens() {
+        applyAssistantTokens(messageId: "m1", newTokens: 1_000)
+        applyAssistantTokens(messageId: "m2", newTokens: 500)
+        XCTAssertEqual(store.tokenTally.tokens, 1_500)
+        XCTAssertFalse(store.tokenTally.isApproximate)
+    }
+
+    func testTallyDedupesByMessageId() {
+        applyAssistantTokens(messageId: "m1", newTokens: 1_000)
+        applyAssistantTokens(messageId: "m1", newTokens: 1_000) // replayed line
+        XCTAssertEqual(store.tokenTally.tokens, 1_000)
+    }
+
+    func testTallyIgnoresOtherDays() {
+        applyAssistantTokens(messageId: "old", newTokens: 9_999, at: clock.addingTimeInterval(-86_400 * 2))
+        applyAssistantTokens(messageId: "new", newTokens: 100)
+        XCTAssertEqual(store.tokenTally.tokens, 100)
+    }
+
+    func testTallyResetsOnDayRollover() {
+        applyAssistantTokens(messageId: "m1", newTokens: 1_000)
+        XCTAssertEqual(store.tokenTally.tokens, 1_000)
+        advance(86_400 + 3600) // next day
+        store.rolloverTallyIfNeeded()
+        XCTAssertEqual(store.tokenTally.tokens, 0)
+        applyAssistantTokens(messageId: "m2", newTokens: 250)
+        XCTAssertEqual(store.tokenTally.tokens, 250)
+    }
+
     func testSnapshotOrdersRoutinesLast() {
         // Inactive session with attention-worthy history.
         store.apply(hook: hookEvent(.notification, session: "inactive-a", cwd: "/p/one"))

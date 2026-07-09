@@ -56,6 +56,10 @@ public final class ClaudeCodeProvider: AgentProvider {
         limitedModeSubject.eraseToAnyPublisher()
     }
 
+    public var tokenTallyPublisher: AnyPublisher<TokenTally?, Never> {
+        tokenTallySubject.eraseToAnyPublisher()
+    }
+
     private let configuration: Configuration
     private let queue = DispatchQueue(label: "com.rjouffret.NotchPilot.ClaudeCodeProvider")
     private let store = SessionStore()
@@ -63,6 +67,7 @@ public final class ClaudeCodeProvider: AgentProvider {
     private let desktopMetadataReader: DesktopSessionMetadataReader?
     private let sessionsSubject = CurrentValueSubject<[AgentSession], Never>([])
     private let limitedModeSubject = CurrentValueSubject<Bool, Never>(false)
+    private let tokenTallySubject = CurrentValueSubject<TokenTally?, Never>(nil)
     private var watchers: [FSEventsWatcher] = []
     private var pollTimer: DispatchSourceTimer?
     private var isRunning = false
@@ -170,6 +175,7 @@ public final class ClaudeCodeProvider: AgentProvider {
             isProcessAlive: configuration.isProcessAlive
         ).aliveEntries()
         store.applyRegistry(registry)
+        store.rolloverTallyIfNeeded()
         processHookEvents()
         scanTranscripts(aliveSessionIds: Set(registry.keys))
         if let desktopMetadataReader {
@@ -222,20 +228,33 @@ public final class ClaudeCodeProvider: AgentProvider {
             let path = url.path
             let transcriptSessionId = url.deletingPathExtension().lastPathComponent
 
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
+                .contentModificationDate ?? .distantPast
+
             // Don't parse historical transcripts that predate the staleness
             // window — unless the session's process is alive (an open-but-
             // quiet session still deserves its activity + gauge) — and keep
             // tailing files we already track.
             if !tailer.isKnown(path), !aliveSessionIds.contains(transcriptSessionId) {
-                let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
-                    .contentModificationDate ?? .distantPast
                 guard modified >= staleCutoff else { continue }
             }
+
+            // Files touched today get a much deeper backfill so the daily
+            // token tally is close to complete; if even that window is
+            // exceeded, the tally is flagged as a lower bound.
+            let modifiedToday = Calendar.current.isDateInToday(modified)
+            let initialWindow: UInt64 = modifiedToday
+                ? 16 * 1024 * 1024
+                : TranscriptTailer.initialReadWindow
 
             let fallbackSessionId = transcriptSessionId
             let fallbackProjectPath = url.deletingLastPathComponent().lastPathComponent
 
-            for lineData in tailer.readNewLines(at: path) {
+            let result = tailer.readNewLines(at: path, initialWindow: initialWindow)
+            if result.skippedHistory, modifiedToday {
+                store.tallyIsApproximate = true
+            }
+            for lineData in result.lines {
                 guard let event = TranscriptLineParser.parse(lineData) else { continue }
                 store.apply(
                     transcript: event,
@@ -253,6 +272,12 @@ public final class ClaudeCodeProvider: AgentProvider {
         if limited != limitedModeSubject.value {
             DispatchQueue.main.async { [limitedModeSubject] in
                 limitedModeSubject.send(limited)
+            }
+        }
+        let tally = store.tokenTally
+        if tally != tokenTallySubject.value {
+            DispatchQueue.main.async { [tokenTallySubject] in
+                tokenTallySubject.send(tally)
             }
         }
         guard snapshot != lastPublished else { return }

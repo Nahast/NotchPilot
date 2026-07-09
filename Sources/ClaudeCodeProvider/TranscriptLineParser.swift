@@ -48,17 +48,26 @@ public struct AssistantActivity: Equatable {
     /// True when the message contains at least one tool_use block
     /// (the turn now waits on a tool result).
     public var issuedToolUse: Bool
+    /// API message id — used to dedupe token tallies across resumed sessions.
+    public var messageId: String?
+    /// Newly consumed tokens for this message: input + cache-creation +
+    /// output (cache reads excluded).
+    public var newTokens: Int?
 
     public init(
         model: String? = nil,
         contextUsedTokens: Int? = nil,
         activityDescription: String? = nil,
-        issuedToolUse: Bool = false
+        issuedToolUse: Bool = false,
+        messageId: String? = nil,
+        newTokens: Int? = nil
     ) {
         self.model = model
         self.contextUsedTokens = contextUsedTokens
         self.activityDescription = activityDescription
         self.issuedToolUse = issuedToolUse
+        self.messageId = messageId
+        self.newTokens = newTokens
     }
 }
 
@@ -132,17 +141,24 @@ public enum TranscriptLineParser {
     private static func parseAssistantMessage(_ message: [String: Any]) -> AssistantActivity {
         var activity = AssistantActivity()
         activity.model = message["model"] as? String
+        activity.messageId = message["id"] as? String
 
         if let usage = message["usage"] as? [String: Any] {
-            let keys = [
+            let contextKeys = [
                 "input_tokens",
                 "cache_creation_input_tokens",
                 "cache_read_input_tokens",
                 "output_tokens",
             ]
-            let values = keys.compactMap { usage[$0] as? Int }
-            if !values.isEmpty {
-                activity.contextUsedTokens = values.reduce(0, +)
+            let contextValues = contextKeys.compactMap { usage[$0] as? Int }
+            if !contextValues.isEmpty {
+                activity.contextUsedTokens = contextValues.reduce(0, +)
+            }
+            // Fresh work only — cache reads are re-reads, not consumption.
+            let newKeys = ["input_tokens", "cache_creation_input_tokens", "output_tokens"]
+            let newValues = newKeys.compactMap { usage[$0] as? Int }
+            if !newValues.isEmpty {
+                activity.newTokens = newValues.reduce(0, +)
             }
         }
 

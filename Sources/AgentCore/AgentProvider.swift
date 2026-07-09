@@ -11,6 +11,8 @@ public protocol AgentProvider: AnyObject {
     /// True when the provider is running without its reliable signal source
     /// (for Claude Code: hooks declined/unavailable → transcript heuristics only).
     var isLimitedModePublisher: AnyPublisher<Bool, Never> { get }
+    /// Tokens consumed today across sessions; nil when unknown.
+    var tokenTallyPublisher: AnyPublisher<TokenTally?, Never> { get }
     /// Start watching. Idempotent.
     func start()
     /// Stop watching and release file-system resources. Idempotent.

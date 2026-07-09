@@ -73,6 +73,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             .store(in: &cancellables)
+        provider.tokenTallyPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] tally in
+                Task { @MainActor [weak self] in
+                    self?.model.update(tokenTally: tally)
+                }
+            }
+            .store(in: &cancellables)
 
         presenter = DynamicNotchKitPresenter(
             model: model,

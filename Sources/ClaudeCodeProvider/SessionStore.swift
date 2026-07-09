@@ -42,6 +42,43 @@ final class SessionStore {
     /// Injectable clock for tests.
     var now: () -> Date = { Date() }
 
+    // MARK: Today's token tally
+
+    private var tallyTokens = 0
+    private var tallyDayStart: Date?
+    private var tallySeenMessageIds: Set<String> = []
+    /// Set by the provider when a large pre-existing transcript's backfill
+    /// was truncated — the tally is then a lower bound.
+    var tallyIsApproximate = false
+
+    var tokenTally: TokenTally {
+        TokenTally(tokens: tallyTokens, isApproximate: tallyIsApproximate)
+    }
+
+    /// Resets the tally at day rollover. Call once per scan.
+    func rolloverTallyIfNeeded() {
+        let today = Calendar.current.startOfDay(for: now())
+        if tallyDayStart != today {
+            tallyDayStart = today
+            tallyTokens = 0
+            tallySeenMessageIds = []
+            tallyIsApproximate = false
+        }
+    }
+
+    private func tally(_ activity: AssistantActivity, at timestamp: Date) {
+        rolloverTallyIfNeeded()
+        guard let newTokens = activity.newTokens, newTokens > 0,
+              Calendar.current.isDate(timestamp, inSameDayAs: now())
+        else { return }
+        // Resumed sessions replay earlier lines into a fresh transcript;
+        // dedupe by API message id so they don't double-count.
+        if let messageId = activity.messageId {
+            guard tallySeenMessageIds.insert(messageId).inserted else { return }
+        }
+        tallyTokens += newTokens
+    }
+
     // MARK: Hook events
 
     func apply(hook event: HookEvent) {
@@ -110,6 +147,9 @@ final class SessionStore {
         // Prefer the line's own timestamp: parsing a pre-existing transcript
         // at launch must not look like fresh activity.
         let timestamp = event.timestamp ?? now()
+        if case let .assistantActivity(activity) = event.kind {
+            tally(activity, at: timestamp)
+        }
         if case .uninteresting = event.kind {
             // Still counts as file activity for staleness purposes.
             touch(sessionId: sessionId, at: timestamp)
