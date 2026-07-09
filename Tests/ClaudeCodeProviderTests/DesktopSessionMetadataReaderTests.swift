@@ -99,11 +99,18 @@ final class DesktopSessionMetadataReaderTests: XCTestCase {
         XCTAssertEqual(reader.infoBySessionId()["cli-1"]?.title, "New title")
     }
 
-    func testFilesWithoutUsefulDataAreSkipped() throws {
-        try writeSessionFile("local_empty.json", payload: ["cliSessionId": "cli-1"])
+    func testOrphanAndBrokenFilesAreSkippedButUntitledKeepsDeepLinkId() throws {
+        // No cliSessionId → cannot be joined to a local session → skipped.
         try writeSessionFile("local_orphan.json", payload: ["title": "Orphan"])
         try Data("not json".utf8).write(to: directory.appendingPathComponent("org-1/ws-1/broken.json"))
-        XCTAssertTrue(reader.infoBySessionId().isEmpty)
+        // No title yet (brand-new session), but its own sessionId is still a
+        // valid deep-link target.
+        try writeSessionFile("local_untitled.json", payload: ["cliSessionId": "cli-1"])
+
+        let infos = reader.infoBySessionId()
+        XCTAssertEqual(infos.count, 1)
+        XCTAssertNil(infos["cli-1"]?.title)
+        XCTAssertNotNil(infos["cli-1"]?.localSessionId)
     }
 
     func testUpdateIsPickedUpAfterFileChanges() throws {
