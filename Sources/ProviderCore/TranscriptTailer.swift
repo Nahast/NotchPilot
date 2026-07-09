@@ -2,36 +2,38 @@ import Foundation
 
 /// Incremental tail-reader for JSONL transcripts: tracks a byte offset per
 /// file and returns only complete lines appended since the previous read.
-final class TranscriptTailer {
+public final class TranscriptTailer {
+    public init() {}
+
     private var offsets: [String: UInt64] = [:]
     private var remainders: [String: Data] = [:]
 
     /// How much of a newly-discovered file to read initially. Reading the
     /// whole file at startup would be wasteful for long-lived transcripts;
     /// the latest ~256 KB always contains the current activity and usage.
-    static let initialReadWindow: UInt64 = 256 * 1024
+    public static let initialReadWindow: UInt64 = 256 * 1024
 
     /// True if the tailer has never seen this file before.
-    func isKnown(_ path: String) -> Bool {
+    public func isKnown(_ path: String) -> Bool {
         offsets[path] != nil
     }
 
-    func forget(_ path: String) {
+    public func forget(_ path: String) {
         offsets[path] = nil
         remainders[path] = nil
     }
 
     /// Result of a read: the complete appended lines, plus whether history
     /// was skipped when first picking up a large file.
-    struct ReadResult {
-        var lines: [Data]
-        var skippedHistory: Bool
+    public struct ReadResult {
+        public var lines: [Data]
+        public var skippedHistory: Bool
     }
 
     /// Reads complete lines appended since the last call. On first sight of a
     /// file, starts at most `initialWindow` bytes from the end (skipping the
     /// first partial line when starting mid-file).
-    func readNewLines(
+    public func readNewLines(
         at path: String,
         initialWindow: UInt64 = TranscriptTailer.initialReadWindow
     ) -> ReadResult {

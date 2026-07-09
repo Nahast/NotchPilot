@@ -1,8 +1,8 @@
 # NotchPilot
 
 NotchPilot lives in your Mac's notch and shows the live status of your local
-AI coding agent sessions. v1 monitors **Claude Code**; the provider
-architecture keeps the door open for Cursor and Codex later.
+AI coding agent sessions — **Claude Code**, **Codex (OpenAI)**, and
+**Cursor** — each with its own brand-colored dot in the compact view.
 
 - **Session list with live status** — *working*, *needs attention*, *idle/done*
 - **Visible alert** (pulse + optional auto-peek) when an agent is waiting on you
@@ -59,17 +59,19 @@ appcast steps.
 
 | Module | Responsibility |
 |---|---|
-| `AgentCore` | Domain model: `AgentSession`, `AgentStatus`, `AgentProvider` protocol |
-| `ClaudeCodeProvider` | Transcript watcher + hook-event watcher, JSONL parser, status state machine |
+| `AgentCore` | Domain model: `AgentSession`, `AgentStatus`, `AgentProvider` protocol, `CompositeAgentProvider` |
+| `ProviderCore` | Shared provider plumbing: FSEvents watching, JSONL tailing |
+| `ClaudeCodeProvider` | Transcript watcher + hook-event watcher, JSONL parser, status state machine, desktop-app metadata |
+| `CodexProvider` | Codex rollout transcripts (`~/.codex/sessions`), session-index names, token gauge |
+| `CursorProvider` | Cursor hook events (`~/.cursor/hooks.json` → spool), hooks installer |
 | `HookInstaller` | Idempotent merge of our hooks into `~/.claude/settings.json`, backups, clean uninstall |
-| `JumpService` | Session → focus (iTerm2 AppleScript, Claude Code desktop app) |
+| `JumpService` | Session → focus (Claude deep link, iTerm2 AppleScript, VS Code / Cursor activation) |
 | `SettingsStore` | UserDefaults-backed preferences |
 | `NotchUI` | Compact + expanded SwiftUI views behind a `NotchPresenter` protocol wrapping [DynamicNotchKit](https://github.com/MrKai77/DynamicNotchKit) |
 | `NotchPilotApp` | App wiring, onboarding, settings window, Sparkle updates, demo mode |
-| `NotchPilotHookHelper` | The `notchpilot-hook` micro-helper invoked by Claude Code hooks |
+| `NotchPilotHookHelper` | The `notchpilot-hook` micro-helper invoked by agent hooks |
 
-Cursor/Codex support later = new `AgentProvider` conformers; nothing else
-changes.
+New agents = new `AgentProvider` conformers; nothing else changes.
 
 ## Privacy
 

@@ -19,17 +19,40 @@ public final class JumpService {
 
     /// Must be called on the main thread (NSAppleScript requirement).
     public func jump(to session: AgentSession) {
+        switch session.agentKind {
+        case .claude:
+            jumpToClaude(session)
+        case .codex:
+            // Codex runs in VS Code or a terminal.
+            jumpToTerminalOrApp(session, appBundleIdPrefixes: ["com.microsoft.VSCode"])
+        case .cursor:
+            jumpToTerminalOrApp(session, appBundleIdPrefixes: ["com.todesktop.230313mzl4w4u92"])
+        case .other:
+            jumpToTerminalOrApp(session, appBundleIdPrefixes: [])
+        }
+    }
+
+    private func jumpToClaude(_ session: AgentSession) {
         if let deepLink = Self.desktopDeepLink(for: session) {
             NSWorkspace.shared.open(deepLink)
             activate(bundleIdentifierPrefix: "com.anthropic.claudefordesktop")
             return
         }
-        let projectPath = session.projectPath
         if isRunning(bundleIdentifierPrefix: "com.googlecode.iterm2") {
-            if jumpToITerm2(projectPath: projectPath) { return }
+            if jumpToITerm2(projectPath: session.projectPath) { return }
         }
         if activateClaudeCodeDesktopApp() { return }
         // Last resort: bring iTerm2 forward even if we couldn't find the tab.
+        activate(bundleIdentifierPrefix: "com.googlecode.iterm2")
+    }
+
+    private func jumpToTerminalOrApp(_ session: AgentSession, appBundleIdPrefixes: [String]) {
+        if isRunning(bundleIdentifierPrefix: "com.googlecode.iterm2") {
+            if jumpToITerm2(projectPath: session.projectPath) { return }
+        }
+        for prefix in appBundleIdPrefixes where activate(bundleIdentifierPrefix: prefix) {
+            return
+        }
         activate(bundleIdentifierPrefix: "com.googlecode.iterm2")
     }
 

@@ -19,10 +19,25 @@ let package = Package(
         // MARK: Domain model
         .target(name: "AgentCore"),
 
+        // MARK: Shared provider plumbing (FSEvents watching, JSONL tailing)
+        .target(name: "ProviderCore"),
+
         // MARK: Claude Code provider (transcripts + hook events)
         .target(
             name: "ClaudeCodeProvider",
-            dependencies: ["AgentCore"]
+            dependencies: ["AgentCore", "ProviderCore"]
+        ),
+
+        // MARK: Codex (OpenAI) provider — rollout transcripts + session index
+        .target(
+            name: "CodexProvider",
+            dependencies: ["AgentCore", "ProviderCore"]
+        ),
+
+        // MARK: Cursor provider — hooks.json events via the spool helper
+        .target(
+            name: "CursorProvider",
+            dependencies: ["AgentCore", "ProviderCore"]
         ),
 
         // MARK: ~/.claude/settings.json hook management
@@ -52,6 +67,8 @@ let package = Package(
             dependencies: [
                 "AgentCore",
                 "ClaudeCodeProvider",
+                "CodexProvider",
+                "CursorProvider",
                 "HookInstaller",
                 "JumpService",
                 "SettingsStore",
@@ -78,6 +95,14 @@ let package = Package(
         .testTarget(
             name: "HookInstallerTests",
             dependencies: ["HookInstaller"]
+        ),
+        .testTarget(
+            name: "CodexProviderTests",
+            dependencies: ["CodexProvider", "AgentCore"]
+        ),
+        .testTarget(
+            name: "CursorProviderTests",
+            dependencies: ["CursorProvider", "AgentCore"]
         ),
     ]
 )

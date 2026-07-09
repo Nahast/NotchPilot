@@ -1,5 +1,6 @@
 import AgentCore
 import Combine
+import ProviderCore
 import Foundation
 
 /// v1 `AgentProvider`: watches Claude Code hook-event spool files (reliable

@@ -1,7 +1,9 @@
 import AgentCore
 import AppKit
 import ClaudeCodeProvider
+import CodexProvider
 import Combine
+import CursorProvider
 import HookInstaller
 import JumpService
 import NotchUI
@@ -12,6 +14,8 @@ import SwiftUI
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settings: SettingsStore!
     private var provider: AgentProvider!
+    private var claudeProvider: ClaudeCodeProvider?
+    private var cursorHooksInstaller: CursorHooksInstaller?
     private var model: NotchViewModel!
     private var presenter: NotchPresenter!
     private var jumpService: JumpService!
@@ -51,10 +55,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if demoMode {
             provider = DemoProvider()
         } else {
-            provider = ClaudeCodeProvider(configuration: .init(
+            let claude = ClaudeCodeProvider(configuration: .init(
                 stalenessTimeout: { settingsStore.stalenessTimeout },
                 hooksInstalled: { installer.isInstalled() }
             ))
+            claudeProvider = claude
+            var providers: [AgentProvider] = [claude]
+
+            // Codex (OpenAI): rollout transcripts carry the status events.
+            let codexHome = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".codex", isDirectory: true)
+            if FileManager.default.fileExists(atPath: codexHome.path) {
+                providers.append(CodexProvider(configuration: .init(
+                    codexHome: codexHome,
+                    stalenessTimeout: { settingsStore.stalenessTimeout }
+                )))
+            }
+
+            // Cursor: hooks.json events spooled by the helper.
+            let cursorHome = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".cursor", isDirectory: true)
+            if FileManager.default.fileExists(atPath: cursorHome.path) {
+                let cursorInstaller = CursorHooksInstaller(
+                    hooksURL: cursorHome.appendingPathComponent("hooks.json"),
+                    helperPath: helperURL.path
+                )
+                cursorHooksInstaller = cursorInstaller
+                if settingsStore.hooksConsentGranted {
+                    do {
+                        try cursorInstaller.install()
+                    } catch {
+                        NSLog("NotchPilot: Cursor hooks install failed: %@", error.localizedDescription)
+                    }
+                }
+                providers.append(CursorProvider(configuration: .init(
+                    eventsDirectory: ClaudeCodePaths.defaultApplicationSupport
+                        .appendingPathComponent(CursorHooksInstaller.spoolSubdirectory, isDirectory: true),
+                    stalenessTimeout: { settingsStore.stalenessTimeout }
+                )))
+            }
+
+            provider = providers.count == 1 ? claude : CompositeAgentProvider(providers: providers)
         }
 
         provider.sessionsPublisher
@@ -162,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.didCompleteOnboarding = true
         onboardingWindow?.close()
         onboardingWindow = nil
-        (provider as? ClaudeCodeProvider)?.rescanNow()
+        claudeProvider?.rescanNow()
     }
 
     /// Install hooks; on malformed settings.json fall back to limited mode
@@ -172,7 +213,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try hookInstaller.install()
             settings.hooksConsentGranted = true
-            (provider as? ClaudeCodeProvider)?.rescanNow()
+            claudeProvider?.rescanNow()
+            // Cursor hooks share the same consent.
+            try? cursorHooksInstaller?.install()
             return true
         } catch {
             settings.hooksConsentGranted = false
@@ -188,8 +231,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func uninstallHooksWithFeedback() {
         do {
             try hookInstaller.uninstall()
+            try? cursorHooksInstaller?.uninstall()
             settings.hooksConsentGranted = false
-            (provider as? ClaudeCodeProvider)?.rescanNow()
+            claudeProvider?.rescanNow()
         } catch {
             let alert = NSAlert()
             alert.messageText = "Could not remove Claude Code hooks"

@@ -3,14 +3,14 @@ import Foundation
 
 /// Thin wrapper around an FSEventStream watching one or more directory trees.
 /// Callbacks arrive on the given dispatch queue.
-final class FSEventsWatcher {
+public final class FSEventsWatcher {
     private var streamRef: FSEventStreamRef?
     private let paths: [String]
     private let latency: CFTimeInterval
     private let queue: DispatchQueue
     private let handler: () -> Void
 
-    init(paths: [String], latency: CFTimeInterval, queue: DispatchQueue, handler: @escaping () -> Void) {
+    public init(paths: [String], latency: CFTimeInterval, queue: DispatchQueue, handler: @escaping () -> Void) {
         self.paths = paths
         self.latency = latency
         self.queue = queue
@@ -21,7 +21,7 @@ final class FSEventsWatcher {
         stop()
     }
 
-    func start() {
+    public func start() {
         guard streamRef == nil else { return }
 
         var context = FSEventStreamContext(
@@ -60,7 +60,7 @@ final class FSEventsWatcher {
         streamRef = stream
     }
 
-    func stop() {
+    public func stop() {
         guard let stream = streamRef else { return }
         FSEventStreamStop(stream)
         FSEventStreamInvalidate(stream)
