@@ -13,8 +13,8 @@ public struct CompactStatusView: View {
     @ObservedObject private var model: NotchViewModel
     private let side: Side
 
-    /// The compact area is small; beyond this many dots the tail is dropped.
-    private static let maxDots = 16
+    /// At most this many dots; further agents collapse into a "+N" count.
+    private static let maxDots = 4
 
     public init(model: NotchViewModel, side: Side) {
         self.model = model
@@ -32,7 +32,8 @@ public struct CompactStatusView: View {
                         .font(.system(size: 9))
                         .foregroundStyle(Color.white.opacity(0.35))
                 } else {
-                    // Small dots stacked two per column.
+                    // Small dots stacked two per column, capped; the rest
+                    // collapse into a "+N" count.
                     ForEach(Self.columns(of: Array(running.prefix(Self.maxDots))), id: \.first!.id) { column in
                         VStack(spacing: 2.5) {
                             ForEach(column) { session in
@@ -42,6 +43,12 @@ public struct CompactStatusView: View {
                                 )
                             }
                         }
+                    }
+                    if running.count > Self.maxDots {
+                        Text("+\(running.count - Self.maxDots)")
+                            .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(Color.white.opacity(0.6))
+                            .padding(.leading, 1)
                     }
                 }
             case .trailing:
