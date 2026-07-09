@@ -19,35 +19,19 @@ final class SessionStore {
         var desktopTitle: String?
         /// The registry marked this session as a non-interactive run.
         var registryIsRoutine = false
+        /// The desktop app recorded this session as a scheduled-task run.
+        var scheduledTaskId: String?
 
         /// Applies the display-name precedence to the session value.
         mutating func refreshName() {
             session.name = desktopTitle ?? registryName
         }
-    }
 
-    /// Normalized names of the user's scheduled tasks
-    /// (`~/.claude/scheduled-tasks/<name>/`). Routines launched from the
-    /// desktop app run as regular interactive sessions, but their generated
-    /// title matches the task name ("Backlog tick" → backlog-tick).
-    var scheduledTaskNames: Set<String> = []
-
-    static func normalizeTaskName(_ name: String) -> String {
-        name.lowercased()
-            .map { $0.isLetter || $0.isNumber ? String($0) : "-" }
-            .joined()
-            .split(separator: "-")
-            .joined(separator: "-")
-    }
-
-    private func isRoutine(_ entry: Entry) -> Bool {
-        if entry.registryIsRoutine { return true }
-        for candidate in [entry.desktopTitle, entry.registryName].compactMap({ $0 }) {
-            if scheduledTaskNames.contains(Self.normalizeTaskName(candidate)) {
-                return true
-            }
+        /// Routine = launched by a scheduled task (desktop metadata is ground
+        /// truth) or registered as a non-interactive run.
+        var isRoutine: Bool {
+            scheduledTaskId != nil || registryIsRoutine
         }
-        return false
     }
 
     /// Sessions with no registry entry stay "active" for this long after
@@ -225,7 +209,7 @@ final class SessionStore {
             entry.registryName = registration.name ?? entry.registryName
             entry.registryIsRoutine = registration.isRoutine
             entry.refreshName()
-            entry.session.isRoutine = isRoutine(entry)
+            entry.session.isRoutine = entry.isRoutine
             if entry.session.projectPath.isEmpty, let cwd = registration.cwd {
                 entry.session.projectPath = cwd
             }
@@ -251,17 +235,19 @@ final class SessionStore {
         }
     }
 
-    // MARK: Desktop app titles
+    // MARK: Desktop app metadata
 
-    /// Applies sidebar titles from the Claude desktop app (session id →
-    /// title). Titles beat registry names; both survive process exit.
-    func applyDesktopTitles(_ titles: [String: String]) {
-        for (sessionId, title) in titles {
+    /// Applies per-session metadata from the Claude desktop app: sidebar
+    /// titles (beat registry names), scheduled-task markers (routines), and
+    /// attached pull requests. All survive process exit.
+    func applyDesktopMetadata(_ metadata: [String: DesktopSessionInfo]) {
+        for (sessionId, info) in metadata {
             guard var entry = entries[sessionId] else { continue }
-            guard entry.desktopTitle != title else { continue }
-            entry.desktopTitle = title
+            entry.desktopTitle = info.title ?? entry.desktopTitle
+            entry.scheduledTaskId = info.scheduledTaskId ?? entry.scheduledTaskId
+            entry.session.pullRequest = info.pullRequest ?? entry.session.pullRequest
             entry.refreshName()
-            entry.session.isRoutine = isRoutine(entry)
+            entry.session.isRoutine = entry.isRoutine
             entries[sessionId] = entry
         }
     }
@@ -324,9 +310,10 @@ final class SessionStore {
         return changed
     }
 
-    /// Sorted snapshot: active before inactive; routines pinned to the top of
-    /// their group; then needs-attention first (longest wait first), working,
-    /// idle; stable by display name within a class.
+    /// Sorted snapshot: regular sessions before routines (routines render as
+    /// their own trailing section); active before inactive; then
+    /// needs-attention first (longest wait first), working, idle; stable by
+    /// display name within a class.
     func snapshot() -> [AgentSession] {
         func rank(_ status: AgentStatus) -> Int {
             switch status {
@@ -336,11 +323,11 @@ final class SessionStore {
             }
         }
         return entries.values.map(\.session).sorted { lhs, rhs in
+            if lhs.isRoutine != rhs.isRoutine {
+                return !lhs.isRoutine
+            }
             if lhs.isActive != rhs.isActive {
                 return lhs.isActive
-            }
-            if lhs.isRoutine != rhs.isRoutine {
-                return lhs.isRoutine
             }
             if rank(lhs.status) != rank(rhs.status) {
                 return rank(lhs.status) < rank(rhs.status)

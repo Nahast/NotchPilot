@@ -31,12 +31,16 @@ public final class NotchViewModel: ObservableObject {
         self.isLimitedMode = isLimitedMode
     }
 
-    /// Panel grouping: sessions whose process is alive vs. everything else.
-    public var activeSessions: [AgentSession] { sessions.filter(\.isActive) }
-    public var inactiveSessions: [AgentSession] { sessions.filter { !$0.isActive } }
+    /// Panel grouping: main list capped at 5 (actives first, most recent
+    /// inactive fill), routines in their own trailing section.
+    public var groups: SessionListLayout.Groups {
+        SessionListLayout.groups(from: sessions)
+    }
 
     /// Compact-view counts consider active sessions only — a dead process
-    /// can't be working or waiting on anyone.
+    /// can't be working or waiting on anyone. All active sessions count,
+    /// even those beyond the panel's display cap.
+    private var activeSessions: [AgentSession] { sessions.filter(\.isActive) }
     public var workingCount: Int { activeSessions.filter { $0.status == .working }.count }
     public var attentionCount: Int { activeSessions.filter { $0.status == .needsAttention }.count }
     public var idleCount: Int { activeSessions.filter { $0.status == .idle }.count }

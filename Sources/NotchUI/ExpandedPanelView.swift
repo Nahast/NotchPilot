@@ -86,31 +86,37 @@ public struct ExpandedPanelView: View {
     }
 
     /// Many sessions → cap height and scroll (design spec §5).
-    /// Grouped by liveness; routines are already sorted to the top of each
-    /// group by the provider.
+    /// Main list is capped at 5 rows (actives first, most recent inactive
+    /// fill); routines get their own section at the end.
     private var sessionList: some View {
-        ScrollView(.vertical, showsIndicators: false) {
+        let groups = model.groups
+        return ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 2) {
-                if !model.activeSessions.isEmpty {
-                    sectionHeader("Active", count: model.activeSessions.count)
-                    ForEach(model.activeSessions) { session in
-                        SessionRowView(session: session) { tapped in
-                            model.onJump?(tapped)
-                        }
-                    }
+                if !groups.active.isEmpty {
+                    sectionHeader("Active", count: groups.active.count)
+                    rows(groups.active)
                 }
-                if !model.inactiveSessions.isEmpty {
-                    sectionHeader("Inactive", count: model.inactiveSessions.count)
-                        .padding(.top, model.activeSessions.isEmpty ? 0 : 6)
-                    ForEach(model.inactiveSessions) { session in
-                        SessionRowView(session: session) { tapped in
-                            model.onJump?(tapped)
-                        }
-                    }
+                if !groups.inactive.isEmpty {
+                    sectionHeader("Recent", count: groups.inactive.count)
+                        .padding(.top, groups.active.isEmpty ? 0 : 6)
+                    rows(groups.inactive)
+                }
+                if !groups.routines.isEmpty {
+                    sectionHeader("Routines", count: groups.routines.count)
+                        .padding(.top, groups.active.isEmpty && groups.inactive.isEmpty ? 0 : 6)
+                    rows(groups.routines)
                 }
             }
         }
         .frame(maxHeight: 320)
+    }
+
+    private func rows(_ sessions: [AgentSession]) -> some View {
+        ForEach(sessions) { session in
+            SessionRowView(session: session) { tapped in
+                model.onJump?(tapped)
+            }
+        }
     }
 
     private func sectionHeader(_ title: String, count: Int) -> some View {

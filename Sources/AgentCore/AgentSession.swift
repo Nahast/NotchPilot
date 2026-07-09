@@ -25,8 +25,11 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
     /// True while the session's process is alive (or its activity is very
     /// recent when no registry entry exists). Drives Active/Inactive grouping.
     public var isActive: Bool
-    /// True for scheduled/background runs (routines) — pinned to the top.
+    /// True for scheduled/background runs (routines) — shown in their own
+    /// section at the end of the panel.
     public var isRoutine: Bool
+    /// Pull request attached to this session, if any.
+    public var pullRequest: PullRequestInfo?
 
     public init(
         id: String,
@@ -40,7 +43,8 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
         isLimitedMode: Bool = false,
         name: String? = nil,
         isActive: Bool = true,
-        isRoutine: Bool = false
+        isRoutine: Bool = false,
+        pullRequest: PullRequestInfo? = nil
     ) {
         self.id = id
         self.projectPath = projectPath
@@ -54,6 +58,7 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
         self.name = name
         self.isActive = isActive
         self.isRoutine = isRoutine
+        self.pullRequest = pullRequest
     }
 
     /// Folder name of the working directory.

@@ -81,7 +81,8 @@ final class DemoProvider: AgentProvider {
                 contextWindowTokens: 200_000,
                 stateChangedAt: now.addingTimeInterval(-Double(170 + (tick % 3) * 30)),
                 lastActivityAt: now,
-                name: "webapp-a1"
+                name: "Fix login flow",
+                pullRequest: PullRequestInfo(number: 42, state: .open)
             ),
             AgentSession(
                 id: "demo-docs",
@@ -92,12 +93,13 @@ final class DemoProvider: AgentProvider {
                 contextWindowTokens: 200_000,
                 stateChangedAt: now.addingTimeInterval(-540),
                 lastActivityAt: now.addingTimeInterval(-540),
-                name: "docs-9c",
-                isActive: false
+                name: "Docs site polish",
+                isActive: false,
+                pullRequest: PullRequestInfo(number: 41, state: .merged)
             ),
         ]
-        // Mirror the provider's sort: active first, routines pinned, then
-        // attention, working, idle.
+        // Mirror the provider's sort: regular sessions before routines,
+        // active first, then attention, working, idle.
         sessions.sort { lhs, rhs in
             func rank(_ status: AgentStatus) -> Int {
                 switch status {
@@ -106,8 +108,8 @@ final class DemoProvider: AgentProvider {
                 case .idle: return 2
                 }
             }
+            if lhs.isRoutine != rhs.isRoutine { return !lhs.isRoutine }
             if lhs.isActive != rhs.isActive { return lhs.isActive }
-            if lhs.isRoutine != rhs.isRoutine { return lhs.isRoutine }
             return rank(lhs.status) < rank(rhs.status)
         }
         return sessions

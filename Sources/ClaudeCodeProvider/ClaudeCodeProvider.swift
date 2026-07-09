@@ -60,7 +60,7 @@ public final class ClaudeCodeProvider: AgentProvider {
     private let queue = DispatchQueue(label: "com.rjouffret.NotchPilot.ClaudeCodeProvider")
     private let store = SessionStore()
     private let tailer = TranscriptTailer()
-    private let titleReader: DesktopSessionTitleReader?
+    private let desktopMetadataReader: DesktopSessionMetadataReader?
     private let sessionsSubject = CurrentValueSubject<[AgentSession], Never>([])
     private let limitedModeSubject = CurrentValueSubject<Bool, Never>(false)
     private var watchers: [FSEventsWatcher] = []
@@ -70,8 +70,8 @@ public final class ClaudeCodeProvider: AgentProvider {
 
     public init(configuration: Configuration = Configuration()) {
         self.configuration = configuration
-        self.titleReader = configuration.desktopSessionsDirectory
-            .map { DesktopSessionTitleReader(directory: $0) }
+        self.desktopMetadataReader = configuration.desktopSessionsDirectory
+            .map { DesktopSessionMetadataReader(directory: $0) }
     }
 
     deinit {
@@ -164,17 +164,7 @@ public final class ClaudeCodeProvider: AgentProvider {
 
     // MARK: Scanning (queue-confined)
 
-    private var scheduledTasksDirectory: URL {
-        configuration.claudeHome.appendingPathComponent("scheduled-tasks", isDirectory: true)
-    }
-
     private func scan() {
-        // Scheduled-task names identify routine sessions by title match.
-        let taskNames = (try? FileManager.default.contentsOfDirectory(
-            atPath: scheduledTasksDirectory.path
-        )) ?? []
-        store.scheduledTaskNames = Set(taskNames.map(SessionStore.normalizeTaskName))
-
         let registry = SessionRegistryReader(
             directory: sessionsRegistryDirectory,
             isProcessAlive: configuration.isProcessAlive
@@ -182,8 +172,8 @@ public final class ClaudeCodeProvider: AgentProvider {
         store.applyRegistry(registry)
         processHookEvents()
         scanTranscripts(aliveSessionIds: Set(registry.keys))
-        if let titleReader {
-            store.applyDesktopTitles(titleReader.titlesBySessionId())
+        if let desktopMetadataReader {
+            store.applyDesktopMetadata(desktopMetadataReader.infoBySessionId())
         }
         store.reapStale(timeout: configuration.stalenessTimeout())
         store.recomputeLimitedStatuses()

@@ -241,7 +241,7 @@ final class SessionStoreTests: XCTestCase {
 
     func testDesktopTitleBeatsRegistryName() {
         store.applyRegistry(["r1": registryEntry(session: "r1", name: "droplet-a1")])
-        store.applyDesktopTitles(["r1": "Automated development workflows"])
+        store.applyDesktopMetadata(["r1": DesktopSessionInfo(title: "Automated development workflows")])
         XCTAssertEqual(store.snapshot()[0].displayName, "Automated development workflows")
 
         // Registry refresh must not clobber the desktop title.
@@ -249,45 +249,49 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(store.snapshot()[0].displayName, "Automated development workflows")
     }
 
-    func testTitleForUnknownSessionIsIgnored() {
-        store.applyDesktopTitles(["ghost": "Some title"])
+    func testMetadataForUnknownSessionIsIgnored() {
+        store.applyDesktopMetadata(["ghost": DesktopSessionInfo(title: "Some title")])
         XCTAssertTrue(store.snapshot().isEmpty)
     }
 
-    func testTitleMatchingScheduledTaskNameMarksRoutine() {
-        store.scheduledTaskNames = ["backlog-tick", "overnight-warp-ticket-implementation"]
+    func testScheduledTaskIdMarksRoutine() {
         store.applyRegistry(["r1": registryEntry(session: "r1", name: "droplet-35")])
         XCTAssertFalse(store.snapshot()[0].isRoutine)
 
-        // The desktop title "Backlog tick" normalizes to the task name.
-        store.applyDesktopTitles(["r1": "Backlog tick"])
+        store.applyDesktopMetadata(["r1": DesktopSessionInfo(
+            title: "Backlog tick",
+            scheduledTaskId: "backlog-tick"
+        )])
         let session = store.snapshot()[0]
         XCTAssertTrue(session.isRoutine)
         XCTAssertEqual(session.displayName, "Backlog tick")
     }
 
-    func testNormalizeTaskName() {
-        XCTAssertEqual(SessionStore.normalizeTaskName("Backlog tick"), "backlog-tick")
-        XCTAssertEqual(SessionStore.normalizeTaskName("backlog-tick"), "backlog-tick")
-        XCTAssertEqual(SessionStore.normalizeTaskName("  Overnight WARP Ticket—Implementation "), "overnight-warp-ticket-implementation")
+    func testPullRequestAttachedToSession() {
+        store.applyRegistry(["r1": registryEntry(session: "r1")])
+        store.applyDesktopMetadata(["r1": DesktopSessionInfo(
+            pullRequest: PullRequestInfo(number: 552, state: .open)
+        )])
+        XCTAssertEqual(store.snapshot()[0].pullRequest?.number, 552)
+        XCTAssertEqual(store.snapshot()[0].pullRequest?.state, .open)
     }
 
-    func testSnapshotOrdersActiveFirstAndRoutinesOnTop() {
+    func testSnapshotOrdersRoutinesLast() {
         // Inactive session with attention-worthy history.
         store.apply(hook: hookEvent(.notification, session: "inactive-a", cwd: "/p/one"))
-        store.applyRegistry([
+        let alive = [
             "work": registryEntry(session: "work", name: "droplet-a1"),
             "routine": registryEntry(session: "routine", kind: "scheduled", name: "backlog-tick"),
-        ])
+        ]
+        store.applyRegistry(alive)
         // "inactive-a" has no registry entry; age it past the grace window.
         advance(SessionStore.activeGraceWindow + 60)
-        store.applyRegistry([
-            "work": registryEntry(session: "work", name: "droplet-a1"),
-            "routine": registryEntry(session: "routine", kind: "scheduled", name: "backlog-tick"),
-        ])
+        store.applyRegistry(alive)
 
-        let ids = store.snapshot().map(\.id)
-        XCTAssertEqual(ids.first, "routine", "routines pinned to the very top")
-        XCTAssertEqual(ids.last, "inactive-a", "inactive sessions sink to the bottom")
+        XCTAssertEqual(
+            store.snapshot().map(\.id),
+            ["work", "inactive-a", "routine"],
+            "regular sessions (active then inactive) before routines"
+        )
     }
 }

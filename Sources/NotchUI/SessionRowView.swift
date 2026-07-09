@@ -38,14 +38,14 @@ struct SessionRowView: View {
                             .monospacedDigit()
                             .foregroundStyle(Color.white.opacity(0.45))
                     }
+                    if let pullRequest = session.pullRequest {
+                        PullRequestDot(pullRequest: pullRequest)
+                    }
                 }
                 Text(activityText)
                     .font(.system(size: 11))
                     .foregroundStyle(Color.white.opacity(0.65))
                     .lineLimit(1)
-                if let fraction = session.contextUsageFraction {
-                    ContextGaugeView(fraction: fraction)
-                }
             }
         }
         .padding(.vertical, 6)
@@ -58,7 +58,7 @@ struct SessionRowView: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { onJump(session) }
-        .help("Click to jump to this session — \(session.projectPath)")
+        .help(helpText)
     }
 
     private var activityText: String {
@@ -70,6 +70,14 @@ struct SessionRowView: View {
         case .needsAttention: return "Waiting for your approval"
         case .idle: return session.isActive ? "Idle" : "Closed"
         }
+    }
+
+    private var helpText: String {
+        var text = "Click to jump to this session — \(session.projectPath)"
+        if let fraction = session.contextUsageFraction {
+            text += " · context \(Int((fraction * 100).rounded()))%"
+        }
+        return text
     }
 
     /// "waiting 3m" / "done 12m" / "45s" (design spec §2).
@@ -125,32 +133,24 @@ struct StatusIconView: View {
     }
 }
 
-/// Thin bar showing % of the model's context window consumed (design spec §2).
-struct ContextGaugeView: View {
-    let fraction: Double
+/// Dot at the end of the title line for sessions with an attached pull
+/// request, in GitHub state colors. (Live CI check results are not stored
+/// locally, so PR state is the signal shown.)
+struct PullRequestDot: View {
+    let pullRequest: PullRequestInfo
 
     var body: some View {
-        HStack(spacing: 6) {
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.15))
-                    Capsule()
-                        .fill(color)
-                        .frame(width: max(2, geometry.size.width * fraction))
-                }
-            }
-            .frame(height: 3)
-            Text("\(Int((fraction * 100).rounded()))%")
-                .font(.system(size: 9))
-                .monospacedDigit()
-                .foregroundStyle(Color.white.opacity(0.45))
-        }
-        .padding(.top, 1)
+        Circle()
+            .fill(color)
+            .frame(width: 7, height: 7)
+            .help("PR #\(pullRequest.number) · \(pullRequest.state.rawValue.lowercased())")
     }
 
     private var color: Color {
-        if fraction < 0.7 { return .green }
-        if fraction < 0.9 { return .orange }
-        return .red
+        switch pullRequest.state {
+        case .open: return .green
+        case .merged: return .purple
+        case .closed: return .red
+        }
     }
 }

@@ -45,13 +45,18 @@ final class ClaudeCodeProviderIntegrationTests: XCTestCase {
 
     private var desktopSessionsDir: URL!
 
-    private func writeDesktopSessionFile(cliSessionId: String, title: String) throws {
-        let payload: [String: Any] = [
+    private func writeDesktopSessionFile(
+        cliSessionId: String,
+        title: String,
+        extra: [String: Any] = [:]
+    ) throws {
+        var payload: [String: Any] = [
             "sessionId": "local_\(UUID().uuidString)",
             "cliSessionId": cliSessionId,
             "title": title,
             "lastActivityAt": Date().timeIntervalSince1970 * 1000,
         ]
+        payload.merge(extra) { _, new in new }
         try JSONSerialization.data(withJSONObject: payload)
             .write(to: desktopSessionsDir.appendingPathComponent("local_\(UUID().uuidString).json"))
     }
@@ -237,16 +242,33 @@ final class ClaudeCodeProviderIntegrationTests: XCTestCase {
         }
     }
 
-    func testRoutineRegistrySessionIsPinnedFirst() throws {
+    func testPullRequestStateFlowsThrough() throws {
+        alivePids = [4242]
+        try writeRegistryFile(pid: 4242, sessionId: sessionId, name: "demo-a1")
+        try writeDesktopSessionFile(
+            cliSessionId: sessionId,
+            title: "Fix onboarding",
+            extra: ["prNumber": 552, "prState": "OPEN", "prUrl": "https://github.com/o/r/pull/552"]
+        )
+        provider.start()
+
+        waitForSessions(description: "PR attached") { sessions in
+            sessions.first?.pullRequest == PullRequestInfo(
+                number: 552, state: .open, url: "https://github.com/o/r/pull/552"
+            )
+        }
+    }
+
+    func testRoutineSessionSortsLast() throws {
         alivePids = [1000, 2000]
         try writeRegistryFile(pid: 1000, sessionId: "aaaa-interactive", name: "droplet-a1")
         try writeRegistryFile(pid: 2000, sessionId: "bbbb-routine", kind: "scheduled", name: "backlog-tick")
         provider.start()
 
-        waitForSessions(description: "routine pinned first") { sessions in
+        waitForSessions(description: "routine sorts last") { sessions in
             sessions.count == 2
-                && sessions[0].id == "bbbb-routine"
-                && sessions[0].isRoutine
+                && sessions[1].id == "bbbb-routine"
+                && sessions[1].isRoutine
         }
     }
 }
