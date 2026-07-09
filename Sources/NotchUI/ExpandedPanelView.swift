@@ -143,7 +143,7 @@ public struct ExpandedPanelView: View {
                 VStack(spacing: 0) {
                     Rectangle()
                     LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
-                        .frame(height: 32)
+                        .frame(height: 64)
                 }
             } else {
                 Rectangle()
