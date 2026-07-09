@@ -7,6 +7,7 @@ import SwiftUI
 /// `.floating` style).
 public struct ExpandedPanelView: View {
     @ObservedObject private var model: NotchViewModel
+    @State private var listContentHeight: CGFloat = 0
 
     public init(model: NotchViewModel) {
         self.model = model
@@ -49,7 +50,7 @@ public struct ExpandedPanelView: View {
             }
         }
         .padding(14)
-        .frame(width: 420)
+        .frame(width: 560)
         .background(
             LinearGradient(
                 colors: [
@@ -112,9 +113,12 @@ public struct ExpandedPanelView: View {
             .frame(maxWidth: .infinity, minHeight: 48)
     }
 
-    /// Many sessions → cap height and scroll (design spec §5).
+    /// Many sessions → cap height and scroll (design spec §5). Overflowing
+    /// content fades out at the bottom instead of hitting a hard edge.
     /// Main list is capped at 5 rows (actives first, most recent inactive
     /// fill); routines get their own section at the end.
+    private static let listMaxHeight: CGFloat = 250
+
     private var sessionList: some View {
         let groups = model.groups
         return ScrollView(.vertical, showsIndicators: false) {
@@ -131,8 +135,20 @@ public struct ExpandedPanelView: View {
                     rows(groups.routines)
                 }
             }
+            .onGeometryChange(for: CGFloat.self, of: \.size.height) { listContentHeight = $0 }
         }
-        .frame(maxHeight: 380)
+        .frame(maxHeight: Self.listMaxHeight)
+        .mask(alignment: .top) {
+            if listContentHeight > Self.listMaxHeight {
+                VStack(spacing: 0) {
+                    Rectangle()
+                    LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 32)
+                }
+            } else {
+                Rectangle()
+            }
+        }
     }
 
     private func rows(_ sessions: [AgentSession]) -> some View {
