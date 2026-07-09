@@ -1,5 +1,14 @@
 import Foundation
 
+/// Which agent product a session belongs to — drives per-agent brand colors
+/// in the compact view (Claude orange, Codex blue, …).
+public enum AgentKind: String, Equatable, Sendable, CaseIterable {
+    case claude
+    case codex
+    case cursor
+    case other
+}
+
 /// A live AI coding agent session as displayed in the notch.
 public struct AgentSession: Identifiable, Equatable, Sendable {
     /// Stable session identifier (Claude Code session UUID).
@@ -37,6 +46,8 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
     /// The Claude desktop app's internal session id ("local_<uuid>") when the
     /// session lives there — enables deep-linking to the exact conversation.
     public var desktopSessionId: String?
+    /// Agent product this session belongs to.
+    public var agentKind: AgentKind
 
     public init(
         id: String,
@@ -54,7 +65,8 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
         pullRequest: PullRequestInfo? = nil,
         model: String? = nil,
         gitBranch: String? = nil,
-        desktopSessionId: String? = nil
+        desktopSessionId: String? = nil,
+        agentKind: AgentKind = .claude
     ) {
         self.id = id
         self.projectPath = projectPath
@@ -72,6 +84,7 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
         self.model = model
         self.gitBranch = gitBranch
         self.desktopSessionId = desktopSessionId
+        self.agentKind = agentKind
     }
 
     /// Folder name of the working directory.

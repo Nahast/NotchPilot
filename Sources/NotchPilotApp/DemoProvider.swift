@@ -93,7 +93,8 @@ final class DemoProvider: AgentProvider {
                 name: "Fix login flow",
                 pullRequest: PullRequestInfo(number: 42, state: .open),
                 model: "claude-opus-4-8",
-                gitBranch: "WARP/login-fix"
+                gitBranch: "WARP/login-fix",
+                agentKind: .codex // shows the per-agent brand colors
             ),
             AgentSession(
                 id: "demo-docs",

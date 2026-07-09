@@ -49,11 +49,24 @@ public final class NotchViewModel: ObservableObject {
         SessionListLayout.groups(from: sessions)
     }
 
-    /// Compact-view counts consider active sessions only — a dead process
+    /// Compact-view signals consider active sessions only — a dead process
     /// can't be working or waiting on anyone. All active sessions count,
     /// even those beyond the panel's display cap.
     private var activeSessions: [AgentSession] { sessions.filter(\.isActive) }
     public var workingCount: Int { activeSessions.filter { $0.status == .working }.count }
     public var attentionCount: Int { activeSessions.filter { $0.status == .needsAttention }.count }
     public var idleCount: Int { activeSessions.filter { $0.status == .idle }.count }
+
+    /// Agents currently mid-turn (working or blocked on the user), attention
+    /// first — one compact dot each.
+    public var runningSessions: [AgentSession] {
+        activeSessions
+            .filter { $0.status == .working || $0.status == .needsAttention }
+            .sorted { lhs, rhs in
+                if (lhs.status == .needsAttention) != (rhs.status == .needsAttention) {
+                    return lhs.status == .needsAttention
+                }
+                return lhs.stateChangedAt < rhs.stateChangedAt
+            }
+    }
 }
