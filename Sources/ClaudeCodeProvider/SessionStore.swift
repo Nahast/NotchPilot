@@ -295,6 +295,7 @@ final class SessionStore {
             if entry.session.gitBranch == nil {
                 entry.session.gitBranch = info.branch
             }
+            entry.session.desktopSessionId = info.localSessionId ?? entry.session.desktopSessionId
             entry.refreshName()
             entry.session.isRoutine = entry.isRoutine
             entries[sessionId] = entry

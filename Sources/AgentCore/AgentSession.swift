@@ -34,6 +34,9 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
     public var model: String?
     /// Git branch the session is working on.
     public var gitBranch: String?
+    /// The Claude desktop app's internal session id ("local_<uuid>") when the
+    /// session lives there — enables deep-linking to the exact conversation.
+    public var desktopSessionId: String?
 
     public init(
         id: String,
@@ -50,7 +53,8 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
         isRoutine: Bool = false,
         pullRequest: PullRequestInfo? = nil,
         model: String? = nil,
-        gitBranch: String? = nil
+        gitBranch: String? = nil,
+        desktopSessionId: String? = nil
     ) {
         self.id = id
         self.projectPath = projectPath
@@ -67,6 +71,7 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
         self.pullRequest = pullRequest
         self.model = model
         self.gitBranch = gitBranch
+        self.desktopSessionId = desktopSessionId
     }
 
     /// Folder name of the working directory.

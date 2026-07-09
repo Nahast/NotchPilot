@@ -276,6 +276,14 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(store.snapshot()[0].pullRequest?.state, .open)
     }
 
+    func testDesktopSessionIdPropagatesForDeepLinking() {
+        store.applyRegistry(["r1": registryEntry(session: "r1")])
+        store.applyDesktopMetadata(["r1": DesktopSessionInfo(
+            localSessionId: "local_abc-123"
+        )])
+        XCTAssertEqual(store.snapshot()[0].desktopSessionId, "local_abc-123")
+    }
+
     // MARK: Token tally
 
     private func applyAssistantTokens(

@@ -12,6 +12,8 @@ struct DesktopSessionInfo: Equatable {
     var pullRequest: PullRequestInfo?
     /// Working branch recorded by the desktop app.
     var branch: String?
+    /// The desktop app's own session id ("local_<uuid>") — deep-link target.
+    var localSessionId: String?
 }
 
 /// Reads the Claude desktop app's session metadata
@@ -85,7 +87,8 @@ final class DesktopSessionMetadataReader {
                 title: nonEmpty(dictionary["title"] as? String),
                 scheduledTaskId: nonEmpty(dictionary["scheduledTaskId"] as? String),
                 pullRequest: parsePullRequest(dictionary),
-                branch: nonEmpty(dictionary["branch"] as? String)
+                branch: nonEmpty(dictionary["branch"] as? String),
+                localSessionId: nonEmpty(dictionary["sessionId"] as? String)
             ),
             recency: recency
         )

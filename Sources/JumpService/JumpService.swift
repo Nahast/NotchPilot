@@ -3,15 +3,27 @@ import AppKit
 import Foundation
 
 /// Session → focus (design spec §3):
-/// - iTerm2: AppleScript, find the window/tab whose session path matches the
-///   project path; select and activate it.
-/// - Claude Code desktop app: activate the app (best effort).
-/// - Fallback: activate whichever of the two is running.
+/// - Sessions living in the Claude desktop app: deep-link straight to the
+///   conversation (`claude://local_sessions/<id>`) and bring the app forward.
+/// - Terminal sessions: AppleScript, find the iTerm2 window/tab whose session
+///   path matches the project path; select and activate it.
+/// - Fallback: activate whichever host app is running.
 public final class JumpService {
     public init() {}
 
+    /// Deep link into the Claude desktop app for a specific conversation.
+    public static func desktopDeepLink(for session: AgentSession) -> URL? {
+        guard let desktopId = session.desktopSessionId, !desktopId.isEmpty else { return nil }
+        return URL(string: "claude://local_sessions/\(desktopId)")
+    }
+
     /// Must be called on the main thread (NSAppleScript requirement).
     public func jump(to session: AgentSession) {
+        if let deepLink = Self.desktopDeepLink(for: session) {
+            NSWorkspace.shared.open(deepLink)
+            activate(bundleIdentifierPrefix: "com.anthropic.claudefordesktop")
+            return
+        }
         let projectPath = session.projectPath
         if isRunning(bundleIdentifierPrefix: "com.googlecode.iterm2") {
             if jumpToITerm2(projectPath: projectPath) { return }
@@ -67,6 +79,7 @@ public final class JumpService {
     // MARK: Claude Code desktop app
 
     private static let claudeCodeBundleIdentifiers = [
+        "com.anthropic.claudefordesktop",
         "com.anthropic.claude-code",
         "com.anthropic.claudecode",
     ]
