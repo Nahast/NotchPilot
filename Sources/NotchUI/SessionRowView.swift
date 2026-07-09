@@ -100,7 +100,7 @@ struct SessionRowView: View {
 }
 
 /// Status icon: working = animated spinner, needs attention = orange,
-/// idle/done = dim check (design spec §2).
+/// idle = dim hollow circle (nothing running).
 struct StatusIconView: View {
     let status: AgentStatus
     @State private var spinning = false
@@ -124,9 +124,11 @@ struct StatusIconView: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.orange)
             case .idle:
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Color.white.opacity(0.35))
+                // Neutral "nothing running" — same stroke family as the
+                // working spinner, just complete and dim.
+                Circle()
+                    .stroke(Color.white.opacity(0.3), lineWidth: 1.5)
+                    .frame(width: 11, height: 11)
             }
         }
         .frame(width: 14, height: 14)
