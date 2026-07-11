@@ -35,9 +35,11 @@ struct SessionRowView: View {
 
     private var titleLine: some View {
         HStack(spacing: 6) {
-            Image(systemName: "asterisk")
+            // The agent this session belongs to, in its brand color.
+            Image(systemName: AgentBrandColor.icon(for: session.agentKind))
                 .font(.system(size: 10, weight: .bold))
-                .foregroundStyle(NotchTheme.accent)
+                .foregroundStyle(AgentBrandColor.color(for: session.agentKind))
+                .help("\(AgentBrandColor.name(for: session.agentKind)) session")
             Text(session.displayName)
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(.white)
@@ -60,7 +62,7 @@ struct SessionRowView: View {
             }
             Spacer(minLength: 4)
             if let pullRequest = session.pullRequest {
-                PullRequestDot(pullRequest: pullRequest)
+                PullRequestChip(pullRequest: pullRequest)
             }
             TimelineView(.periodic(from: .now, by: 10)) { context in
                 Text(Self.stateDurationText(for: session, now: context.date))
@@ -149,7 +151,8 @@ struct SessionRowView: View {
     }
 
     private var helpText: String {
-        var text = "Click to jump to this session — \(session.projectPath)"
+        var text = "\(AgentBrandColor.name(for: session.agentKind)) session — "
+            + "click to jump — \(session.projectPath)"
         if let fraction = session.contextUsageFraction {
             text += " · context \(Int((fraction * 100).rounded()))%"
         }
@@ -204,16 +207,21 @@ struct StatusDotView: View {
     }
 }
 
-/// Dot for sessions with an attached pull request, in GitHub state colors.
+/// "#42" with a GitHub-state-colored dot for sessions with an attached PR.
 /// (Live CI check results are not stored locally, so PR state is the signal.)
-struct PullRequestDot: View {
+struct PullRequestChip: View {
     let pullRequest: PullRequestInfo
 
     var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: 7, height: 7)
-            .help("PR #\(pullRequest.number) · \(pullRequest.state.rawValue.lowercased())")
+        HStack(spacing: 3) {
+            Circle()
+                .fill(color)
+                .frame(width: 5, height: 5)
+            Text("#\(pullRequest.number)")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(Color.white.opacity(0.55))
+        }
+        .help("PR #\(pullRequest.number) · \(pullRequest.state.rawValue.lowercased())")
     }
 
     private var color: Color {

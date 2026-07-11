@@ -68,7 +68,7 @@ public struct CompactStatusView: View {
     }
 }
 
-/// Brand colors per agent product.
+/// Brand colors + glyphs per agent product.
 enum AgentBrandColor {
     static func color(for kind: AgentKind) -> Color {
         switch kind {
@@ -76,6 +76,25 @@ enum AgentBrandColor {
         case .codex: return Color(red: 0.36, green: 0.60, blue: 1.0) // blue
         case .cursor: return Color(red: 0.35, green: 0.85, blue: 0.85) // teal
         case .other: return Color.white.opacity(0.6)
+        }
+    }
+
+    /// SF Symbol evoking each agent's brand (Claude's asterisk logo, etc.).
+    static func icon(for kind: AgentKind) -> String {
+        switch kind {
+        case .claude: return "asterisk"
+        case .codex: return "hexagon"
+        case .cursor: return "cursorarrow"
+        case .other: return "circle.dashed"
+        }
+    }
+
+    static func name(for kind: AgentKind) -> String {
+        switch kind {
+        case .claude: return "Claude"
+        case .codex: return "Codex"
+        case .cursor: return "Cursor"
+        case .other: return "Agent"
         }
     }
 }
