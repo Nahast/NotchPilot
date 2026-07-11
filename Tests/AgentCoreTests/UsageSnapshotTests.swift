@@ -18,19 +18,19 @@ final class UsageSnapshotTests: XCTestCase {
         ], "5h first, 7d second, then per-model windows")
 
         let fiveHour = snapshot.windows[0]
-        XCTAssertEqual(fiveHour.label, "5h")
+        XCTAssertEqual(fiveHour.label, "5-hour limit")
         XCTAssertEqual(fiveHour.usedFraction, 0.16, accuracy: 0.001)
         XCTAssertEqual(fiveHour.remainingFraction, 0.84, accuracy: 0.001)
         XCTAssertNotNil(fiveHour.resetsAt)
 
-        XCTAssertEqual(snapshot.windows[2].label, "7d Fable")
-        XCTAssertEqual(snapshot.windows[3].label, "7d Opus")
+        XCTAssertEqual(snapshot.windows[2].label, "Weekly · Fable")
+        XCTAssertEqual(snapshot.windows[3].label, "Weekly · Opus")
     }
 
     func testUnknownWindowKeysGetReadableLabels() {
-        XCTAssertEqual(UsageSnapshot.label(forKey: "five_hour"), "5h")
-        XCTAssertEqual(UsageSnapshot.label(forKey: "seven_day"), "7d")
-        XCTAssertEqual(UsageSnapshot.label(forKey: "seven_day_fable"), "7d Fable")
+        XCTAssertEqual(UsageSnapshot.label(forKey: "five_hour"), "5-hour limit")
+        XCTAssertEqual(UsageSnapshot.label(forKey: "seven_day"), "Weekly · all models")
+        XCTAssertEqual(UsageSnapshot.label(forKey: "seven_day_fable"), "Weekly · Fable")
         XCTAssertEqual(UsageSnapshot.label(forKey: "thirty_day"), "Thirty Day")
     }
 

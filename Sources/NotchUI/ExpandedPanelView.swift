@@ -288,7 +288,7 @@ struct UsageWindowRow: View {
             Text(window.label)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(Color.white.opacity(0.45))
-                .frame(width: 64, alignment: .leading)
+                .frame(width: 124, alignment: .leading)
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.12))
