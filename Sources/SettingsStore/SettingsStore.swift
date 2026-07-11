@@ -9,6 +9,9 @@ public final class SettingsStore: ObservableObject {
         static let hooksConsentGranted = "hooksConsentGranted"
         static let demoMode = "demoMode"
         static let showUsage = "showUsage"
+        static let claudeEnabled = "agentClaudeEnabled"
+        static let codexEnabled = "agentCodexEnabled"
+        static let cursorEnabled = "agentCursorEnabled"
     }
 
     private let defaults: UserDefaults
@@ -38,6 +41,20 @@ public final class SettingsStore: ObservableObject {
         didSet { defaults.set(showUsage, forKey: Keys.showUsage) }
     }
 
+    /// Per-agent connections: disconnecting stops monitoring that agent (and
+    /// removes its hooks); reconnecting goes through that agent's onboarding.
+    @Published public var claudeEnabled: Bool {
+        didSet { defaults.set(claudeEnabled, forKey: Keys.claudeEnabled) }
+    }
+
+    @Published public var codexEnabled: Bool {
+        didSet { defaults.set(codexEnabled, forKey: Keys.codexEnabled) }
+    }
+
+    @Published public var cursorEnabled: Bool {
+        didSet { defaults.set(cursorEnabled, forKey: Keys.cursorEnabled) }
+    }
+
     public var stalenessTimeout: TimeInterval {
         TimeInterval(max(1, stalenessTimeoutMinutes)) * 60
     }
@@ -50,11 +67,17 @@ public final class SettingsStore: ObservableObject {
             Keys.hooksConsentGranted: false,
             Keys.demoMode: false,
             Keys.showUsage: true,
+            Keys.claudeEnabled: true,
+            Keys.codexEnabled: true,
+            Keys.cursorEnabled: true,
         ])
         stalenessTimeoutMinutes = defaults.integer(forKey: Keys.stalenessTimeoutMinutes)
         didCompleteOnboarding = defaults.bool(forKey: Keys.didCompleteOnboarding)
         hooksConsentGranted = defaults.bool(forKey: Keys.hooksConsentGranted)
         demoMode = defaults.bool(forKey: Keys.demoMode)
         showUsage = defaults.bool(forKey: Keys.showUsage)
+        claudeEnabled = defaults.bool(forKey: Keys.claudeEnabled)
+        codexEnabled = defaults.bool(forKey: Keys.codexEnabled)
+        cursorEnabled = defaults.bool(forKey: Keys.cursorEnabled)
     }
 }
