@@ -214,7 +214,10 @@ final class SessionStore {
             }
             if let used = activity.contextUsedTokens {
                 entry.session.contextUsedTokens = used
-                entry.session.contextWindowTokens = ModelContextTable.contextWindow(for: activity.model)
+                // Size the gauge off the model the row actually shows (which a
+                // synthetic turn doesn't overwrite), not the raw latest id.
+                entry.session.contextWindowTokens =
+                    ModelContextTable.contextWindow(for: entry.session.model)
             }
             entry.pendingToolUse = activity.issuedToolUse
         case .toolResult:

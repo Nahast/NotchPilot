@@ -95,6 +95,29 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(sessions[0].model, "claude-opus-4-8")
     }
 
+    func testSyntheticTurnDoesNotResizeGaugeToDefaultWindow() {
+        store.apply(hook: hookEvent(.sessionStart))
+        store.apply(
+            transcript: TranscriptEvent(
+                sessionId: "s1", cwd: nil,
+                kind: .assistantActivity(AssistantActivity(model: "claude-sonnet-4-5[1m]", contextUsedTokens: 100_000))
+            ),
+            fallbackSessionId: "s1", fallbackProjectPath: "demo"
+        )
+        let listedWindow = store.snapshot()[0].contextWindowTokens
+        XCTAssertEqual(listedWindow, 1_000_000, "1M model should size the gauge")
+        // A synthetic turn carrying usage must keep the gauge on the real
+        // model's window, not fall back to the 200k default.
+        store.apply(
+            transcript: TranscriptEvent(
+                sessionId: "s1", cwd: nil,
+                kind: .assistantActivity(AssistantActivity(model: "<synthetic>", contextUsedTokens: 120_000))
+            ),
+            fallbackSessionId: "s1", fallbackProjectPath: "demo"
+        )
+        XCTAssertEqual(store.snapshot()[0].contextWindowTokens, 1_000_000)
+    }
+
     func testStateChangedAtOnlyMovesOnStatusChange() {
         store.apply(hook: hookEvent(.sessionStart))
         let started = clock!
