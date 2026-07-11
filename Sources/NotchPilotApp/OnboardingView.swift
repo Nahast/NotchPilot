@@ -1,10 +1,14 @@
+import AgentCore
 import SwiftUI
 
-/// One supported agent and whether its home directory was found.
+/// One supported agent: whether its home directory was found and whether
+/// the user currently has it connected (monitored).
 struct AgentDetection: Identifiable {
+    let kind: AgentKind
     let name: String
     let icon: String
     let detected: Bool
+    var enabled: Bool = true
     var id: String { name }
 }
 

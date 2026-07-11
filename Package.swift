@@ -104,5 +104,9 @@ let package = Package(
             name: "CursorProviderTests",
             dependencies: ["CursorProvider", "AgentCore"]
         ),
+        .testTarget(
+            name: "SettingsStoreTests",
+            dependencies: ["SettingsStore"]
+        ),
     ]
 )

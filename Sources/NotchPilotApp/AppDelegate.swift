@@ -13,9 +13,14 @@ import SwiftUI
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settings: SettingsStore!
-    private var provider: AgentProvider!
+    private var provider: AgentProvider?
     private var claudeProvider: ClaudeCodeProvider?
     private var cursorHooksInstaller: CursorHooksInstaller?
+    private var helperURL: URL!
+    private var demoMode = false
+    /// Subscriptions tied to the current provider stack — cleared and
+    /// re-created whenever an agent is connected or disconnected.
+    private var providerCancellables = Set<AnyCancellable>()
     private var model: NotchViewModel!
     private var presenter: NotchPresenter!
     private var jumpService: JumpService!
@@ -31,7 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         settings = SettingsStore()
-        let demoMode = CommandLine.arguments.contains("--demo") || settings.demoMode
+        demoMode = CommandLine.arguments.contains("--demo") || settings.demoMode
+        let demoMode = self.demoMode
 
         // Scriptable setup: `open NotchPilot.app --args --enable-launch-at-login`
         if CommandLine.arguments.contains("--enable-launch-at-login") {
@@ -39,11 +45,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("NotchPilot: launch at login now %@", LaunchAtLogin.isEnabled ? "enabled" : "NOT enabled")
         }
 
-        let helperURL = HelperDeployer.deployIfNeeded() ?? ClaudeCodePaths.defaultHelperInstallURL
+        helperURL = HelperDeployer.deployIfNeeded() ?? ClaudeCodePaths.defaultHelperInstallURL
         hookInstaller = HookInstaller(
             settingsURL: ClaudeCodePaths.defaultClaudeHome.appendingPathComponent("settings.json"),
             helperPath: helperURL.path
         )
+        let cursorHome = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".cursor", isDirectory: true)
+        if FileManager.default.fileExists(atPath: cursorHome.path) {
+            cursorHooksInstaller = CursorHooksInstaller(
+                hooksURL: cursorHome.appendingPathComponent("hooks.json"),
+                helperPath: helperURL.path
+            )
+        }
 
         model = NotchViewModel()
         jumpService = JumpService()
@@ -56,81 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.showSettingsWindow()
         }
 
-        let installer = hookInstaller!
-        let settingsStore = settings!
-        if demoMode {
-            provider = DemoProvider()
-        } else {
-            let claude = ClaudeCodeProvider(configuration: .init(
-                stalenessTimeout: { settingsStore.stalenessTimeout },
-                hooksInstalled: { installer.isInstalled() }
-            ))
-            claudeProvider = claude
-            var providers: [AgentProvider] = [claude]
-
-            // Codex (OpenAI): rollout transcripts carry the status events.
-            let codexHome = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".codex", isDirectory: true)
-            if FileManager.default.fileExists(atPath: codexHome.path) {
-                providers.append(CodexProvider(configuration: .init(
-                    codexHome: codexHome,
-                    stalenessTimeout: { settingsStore.stalenessTimeout }
-                )))
-            }
-
-            // Cursor: hooks.json events spooled by the helper.
-            let cursorHome = FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent(".cursor", isDirectory: true)
-            if FileManager.default.fileExists(atPath: cursorHome.path) {
-                let cursorInstaller = CursorHooksInstaller(
-                    hooksURL: cursorHome.appendingPathComponent("hooks.json"),
-                    helperPath: helperURL.path
-                )
-                cursorHooksInstaller = cursorInstaller
-                if settingsStore.hooksConsentGranted {
-                    do {
-                        try cursorInstaller.install()
-                    } catch {
-                        NSLog("NotchPilot: Cursor hooks install failed: %@", error.localizedDescription)
-                    }
-                }
-                providers.append(CursorProvider(configuration: .init(
-                    eventsDirectory: ClaudeCodePaths.defaultApplicationSupport
-                        .appendingPathComponent(CursorHooksInstaller.spoolSubdirectory, isDirectory: true),
-                    stalenessTimeout: { settingsStore.stalenessTimeout }
-                )))
-            }
-
-            provider = providers.count == 1 ? claude : CompositeAgentProvider(providers: providers)
-        }
-
-        provider.sessionsPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] sessions in
-                Task { @MainActor [weak self] in
-                    self?.model.update(sessions: sessions)
-                }
-            }
-            .store(in: &cancellables)
-        provider.isLimitedModePublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] limited in
-                Task { @MainActor [weak self] in
-                    self?.model.update(isLimitedMode: limited)
-                }
-            }
-            .store(in: &cancellables)
-        provider.tokenTallyPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] tally in
-                Task { @MainActor [weak self] in
-                    self?.model.update(tokenTally: tally)
-                }
-            }
-            .store(in: &cancellables)
+        configureProviders()
 
         presenter = DynamicNotchKitPresenter(model: model)
 
+        let settingsStore = settings!
         usageService = UsageService(isEnabled: { settingsStore.showUsage })
         usageService.snapshotPublisher
             .receive(on: DispatchQueue.main)
@@ -164,7 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        provider.start()
+        // Providers were already started by configureProviders().
         presenter.show()
 
         if !settings.didCompleteOnboarding, !demoMode {
@@ -188,24 +132,171 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
     }
 
-    // MARK: Onboarding
+    // MARK: Provider stack (rebuilt when agents connect/disconnect)
 
-    /// Which supported agents exist on this Mac (home directory present).
-    static func detectAgents() -> [AgentDetection] {
+    /// Builds and starts the provider stack from the per-agent connection
+    /// flags. Called at launch and again whenever a connection flips —
+    /// disconnected agents' watchers are fully torn down, not just filtered.
+    private func configureProviders() {
+        provider?.stop()
+        providerCancellables.removeAll()
+        claudeProvider = nil
+
+        if demoMode {
+            provider = DemoProvider()
+        } else {
+            let installer = hookInstaller!
+            let settingsStore = settings!
+            var providers: [AgentProvider] = []
+
+            if settingsStore.claudeEnabled {
+                let claude = ClaudeCodeProvider(configuration: .init(
+                    stalenessTimeout: { settingsStore.stalenessTimeout },
+                    hooksInstalled: { installer.isInstalled() }
+                ))
+                claudeProvider = claude
+                providers.append(claude)
+            }
+
+            // Codex (OpenAI): rollout transcripts carry the status events.
+            let codexHome = FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".codex", isDirectory: true)
+            if settingsStore.codexEnabled, FileManager.default.fileExists(atPath: codexHome.path) {
+                providers.append(CodexProvider(configuration: .init(
+                    codexHome: codexHome,
+                    stalenessTimeout: { settingsStore.stalenessTimeout }
+                )))
+            }
+
+            // Cursor: hooks.json events spooled by the helper.
+            if settingsStore.cursorEnabled, let cursorInstaller = cursorHooksInstaller {
+                if settingsStore.hooksConsentGranted {
+                    do {
+                        try cursorInstaller.install()
+                    } catch {
+                        NSLog("NotchPilot: Cursor hooks install failed: %@", error.localizedDescription)
+                    }
+                }
+                providers.append(CursorProvider(configuration: .init(
+                    eventsDirectory: ClaudeCodePaths.defaultApplicationSupport
+                        .appendingPathComponent(CursorHooksInstaller.spoolSubdirectory, isDirectory: true),
+                    stalenessTimeout: { settingsStore.stalenessTimeout }
+                )))
+            }
+
+            switch providers.count {
+            case 0: provider = nil
+            case 1: provider = providers[0]
+            default: provider = CompositeAgentProvider(providers: providers)
+            }
+        }
+
+        guard let provider else {
+            // Everything disconnected: clear the notch state.
+            model.update(sessions: [])
+            model.update(isLimitedMode: false)
+            model.update(tokenTally: nil)
+            return
+        }
+
+        provider.sessionsPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] sessions in
+                Task { @MainActor [weak self] in
+                    self?.model.update(sessions: sessions)
+                }
+            }
+            .store(in: &providerCancellables)
+        provider.isLimitedModePublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] limited in
+                Task { @MainActor [weak self] in
+                    self?.model.update(isLimitedMode: limited)
+                }
+            }
+            .store(in: &providerCancellables)
+        provider.tokenTallyPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] tally in
+                Task { @MainActor [weak self] in
+                    self?.model.update(tokenTally: tally)
+                }
+            }
+            .store(in: &providerCancellables)
+        provider.start()
+    }
+
+    // MARK: Agent connections
+
+    /// Which supported agents exist on this Mac and whether they're connected.
+    func detectAgents() -> [AgentDetection] {
         let home = FileManager.default.homeDirectoryForCurrentUser
         func found(_ dir: String) -> Bool {
             FileManager.default.fileExists(atPath: home.appendingPathComponent(dir).path)
         }
         return [
-            AgentDetection(name: "Claude Code", icon: "asterisk", detected: found(".claude")),
-            AgentDetection(name: "Codex", icon: "hexagon", detected: found(".codex")),
-            AgentDetection(name: "Cursor", icon: "cursorarrow", detected: found(".cursor")),
+            AgentDetection(kind: .claude, name: "Claude Code", icon: "asterisk",
+                           detected: found(".claude"), enabled: settings.claudeEnabled),
+            AgentDetection(kind: .codex, name: "Codex", icon: "hexagon",
+                           detected: found(".codex"), enabled: settings.codexEnabled),
+            AgentDetection(kind: .cursor, name: "Cursor", icon: "cursorarrow",
+                           detected: found(".cursor"), enabled: settings.cursorEnabled),
         ]
+    }
+
+    /// Reconnect an agent after its per-provider onboarding: re-enable
+    /// monitoring and (re)install that agent's hooks.
+    func connectAgent(_ kind: AgentKind) {
+        switch kind {
+        case .claude:
+            settings.claudeEnabled = true
+            do {
+                try hookInstaller.install()
+                settings.hooksConsentGranted = true
+            } catch {
+                NSLog("NotchPilot: Claude hooks install failed: %@", error.localizedDescription)
+            }
+        case .codex:
+            settings.codexEnabled = true // no hooks needed
+        case .cursor:
+            settings.cursorEnabled = true
+            settings.hooksConsentGranted = true
+            // configureProviders() performs the actual hooks install.
+        case .other:
+            break
+        }
+        configureProviders()
+    }
+
+    /// Disconnect an agent: tear down its watchers and remove its hooks.
+    /// Fully reversible via Connect (per-provider onboarding).
+    func disconnectAgent(_ kind: AgentKind) {
+        switch kind {
+        case .claude:
+            settings.claudeEnabled = false
+            do {
+                try hookInstaller.uninstall()
+            } catch {
+                NSLog("NotchPilot: Claude hooks removal failed: %@", error.localizedDescription)
+            }
+        case .codex:
+            settings.codexEnabled = false
+        case .cursor:
+            settings.cursorEnabled = false
+            do {
+                try cursorHooksInstaller?.uninstall()
+            } catch {
+                NSLog("NotchPilot: Cursor hooks removal failed: %@", error.localizedDescription)
+            }
+        case .other:
+            break
+        }
+        configureProviders()
     }
 
     private func showOnboarding() {
         let view = OnboardingView(
-            agents: Self.detectAgents(),
+            agents: detectAgents(),
             onInstallHooks: { [weak self] in self?.finishOnboarding(installHooks: true) },
             onSkip: { [weak self] in self?.finishOnboarding(installHooks: false) }
         )
@@ -238,8 +329,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             try hookInstaller.install()
             settings.hooksConsentGranted = true
             claudeProvider?.rescanNow()
-            // Cursor hooks share the same consent.
-            try? cursorHooksInstaller?.install()
+            // Cursor hooks share the same consent — but respect an explicit
+            // per-agent disconnect; reconnecting Cursor is its own flow.
+            if settings.cursorEnabled {
+                try? cursorHooksInstaller?.install()
+            }
             return true
         } catch {
             settings.hooksConsentGranted = false
@@ -283,7 +377,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 uninstallHooks: { [weak self] in self?.uninstallHooksWithFeedback() },
                 updatesAvailable: { [weak self] in self?.updateService.isAvailable ?? false },
                 checkForUpdates: { [weak self] in self?.updateService.checkForUpdates() },
-                detectedAgents: { Self.detectAgents() }
+                detectedAgents: { [weak self] in self?.detectAgents() ?? [] },
+                connectAgent: { [weak self] kind in self?.connectAgent(kind) },
+                disconnectAgent: { [weak self] kind in self?.disconnectAgent(kind) }
             )
         )
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))

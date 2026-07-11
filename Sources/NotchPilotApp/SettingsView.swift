@@ -1,3 +1,4 @@
+import AgentCore
 import SettingsStore
 import SwiftUI
 
@@ -9,6 +10,8 @@ struct SettingsActions {
     var updatesAvailable: () -> Bool
     var checkForUpdates: () -> Void
     var detectedAgents: () -> [AgentDetection]
+    var connectAgent: (AgentKind) -> Void
+    var disconnectAgent: (AgentKind) -> Void
 }
 
 /// Settings window (design spec §2): launch at login, auto-peek toggle,
@@ -19,6 +22,9 @@ struct SettingsView: View {
 
     @State private var launchAtLogin = LaunchAtLogin.isEnabled
     @State private var hooksInstalled = false
+    @State private var agents: [AgentDetection] = []
+    /// Agent whose per-provider onboarding sheet is showing.
+    @State private var connectTarget: AgentDetection?
 
     var body: some View {
         Form {
@@ -38,18 +44,12 @@ struct SettingsView: View {
             }
 
             Section("Connected agents") {
-                ForEach(actions.detectedAgents()) { agent in
-                    HStack {
-                        Image(systemName: agent.detected ? "checkmark.circle.fill" : "circle.dashed")
-                            .foregroundStyle(agent.detected ? .green : .secondary)
-                        Text(agent.name)
-                        Spacer()
-                        Text(agent.detected ? "Monitoring" : "Not found")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
-                    .font(.callout)
+                ForEach(agents) { agent in
+                    agentRow(agent)
                 }
+                Text("Disconnecting stops all monitoring for that agent and removes its hooks. Reconnect anytime.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Agent hooks") {
@@ -91,8 +91,19 @@ struct SettingsView: View {
             }
 
             Section("About") {
-                Text("NotchPilot \(appVersion)")
-                    .font(.callout)
+                HStack(spacing: 8) {
+                    Text("NotchPilot \(appVersion)")
+                        .font(.callout)
+                    Text("BETA")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .kerning(0.5)
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.orange.opacity(0.12)))
+                        .overlay(Capsule().stroke(Color.orange.opacity(0.55), lineWidth: 1))
+                        .help("NotchPilot is a beta — expect rough edges; feedback welcome")
+                }
                 Text("""
                 Local processing. Network traffic: the Sparkle update check, \
                 and — when usage limits are shown — Anthropic's usage endpoint, \
@@ -100,17 +111,78 @@ struct SettingsView: View {
                 """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text("Questions or feedback?")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Link("rjouffret@warp-lab.ai",
+                         destination: URL(string: "mailto:rjouffret@warp-lab.ai")!)
+                        .font(.caption)
+                }
             }
         }
         .formStyle(.grouped)
         .frame(width: 440)
         .fixedSize(horizontal: false, vertical: true)
         .onAppear(perform: refreshStatus)
+        .sheet(item: $connectTarget) { agent in
+            AgentConnectView(
+                agent: agent,
+                onConnect: {
+                    actions.connectAgent(agent.kind)
+                    connectTarget = nil
+                    refreshStatus()
+                },
+                onCancel: { connectTarget = nil }
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func agentRow(_ agent: AgentDetection) -> some View {
+        HStack {
+            Image(systemName: statusIcon(for: agent))
+                .foregroundStyle(statusColor(for: agent))
+            Text(agent.name)
+            Spacer()
+            if !agent.detected {
+                Text("Not found")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if agent.enabled {
+                Text("Monitoring")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Disconnect") {
+                    actions.disconnectAgent(agent.kind)
+                    refreshStatus()
+                }
+            } else {
+                Text("Disconnected")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Connect…") {
+                    connectTarget = agent
+                }
+            }
+        }
+        .font(.callout)
+    }
+
+    private func statusIcon(for agent: AgentDetection) -> String {
+        if !agent.detected { return "circle.dashed" }
+        return agent.enabled ? "checkmark.circle.fill" : "pause.circle"
+    }
+
+    private func statusColor(for agent: AgentDetection) -> Color {
+        if !agent.detected { return .secondary }
+        return agent.enabled ? .green : .orange
     }
 
     private func refreshStatus() {
         hooksInstalled = actions.hooksInstalled()
         launchAtLogin = LaunchAtLogin.isEnabled
+        agents = actions.detectedAgents()
     }
 
     private var appVersion: String {
