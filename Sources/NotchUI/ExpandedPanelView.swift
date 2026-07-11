@@ -85,7 +85,10 @@ public struct ExpandedPanelView: View {
         // only a hairline black rim remains. Floating style lays out
         // differently and keeps its normal margins.
         .padding(.horizontal, model.showsAsFloatingPill ? 0 : -26)
-        .padding(.bottom, model.showsAsFloatingPill ? 0 : -10)
+        // Fully cancel the kit's 15pt bottom safe-area: the card runs flush
+        // to the shape's bottom edge and its corners are rounded by the
+        // notch shape's own mask — no black bar.
+        .padding(.bottom, model.showsAsFloatingPill ? 0 : -15)
     }
 
     private var header: some View {
