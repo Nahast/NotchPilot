@@ -33,4 +33,17 @@ public enum ModelContextTable {
         }
         return best?.window ?? defaultContextWindow
     }
+
+    /// Evidence-corrected window: a session cannot hold more tokens than its
+    /// window, so observed usage beyond the assumed size proves a 1M-context
+    /// session whose transcript id doesn't carry the [1m] marker (Claude Code
+    /// records e.g. "claude-fable-5" for 1M sessions too). Without this, such
+    /// sessions clamp to a misleading red 100%.
+    public static func contextWindow(for model: String?, observedUsedTokens: Int?) -> Int {
+        let assumed = contextWindow(for: model)
+        if let used = observedUsedTokens, used > assumed {
+            return 1_000_000
+        }
+        return assumed
+    }
 }

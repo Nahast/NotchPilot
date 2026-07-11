@@ -215,9 +215,12 @@ final class SessionStore {
             if let used = activity.contextUsedTokens {
                 entry.session.contextUsedTokens = used
                 // Size the gauge off the model the row actually shows (which a
-                // synthetic turn doesn't overwrite), not the raw latest id.
-                entry.session.contextWindowTokens =
-                    ModelContextTable.contextWindow(for: entry.session.model)
+                // synthetic turn doesn't overwrite), corrected by evidence:
+                // usage beyond the assumed window proves a 1M session.
+                entry.session.contextWindowTokens = ModelContextTable.contextWindow(
+                    for: entry.session.model,
+                    observedUsedTokens: used
+                )
             }
             entry.pendingToolUse = activity.issuedToolUse
         case .toolResult:
