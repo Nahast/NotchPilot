@@ -57,6 +57,67 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(store.snapshot()[0].activity, "Waiting for your approval")
     }
 
+    private func assistantActivity(session: String = "s1", model: String?) {
+        store.apply(
+            transcript: TranscriptEvent(
+                sessionId: session,
+                cwd: nil,
+                kind: .assistantActivity(AssistantActivity(model: model))
+            ),
+            fallbackSessionId: session,
+            fallbackProjectPath: "demo"
+        )
+    }
+
+    func testSyntheticOnlySessionIsHidden() {
+        store.apply(hook: hookEvent(.sessionStart))
+        assistantActivity(model: "<synthetic>")
+        // A conversation that has only ever produced synthetic messages is
+        // noise — dropped from the snapshot entirely.
+        XCTAssertTrue(store.snapshot().isEmpty)
+    }
+
+    func testUnlistedModelSessionIsHidden() {
+        store.apply(hook: hookEvent(.sessionStart))
+        assistantActivity(model: "some-internal-model")
+        XCTAssertTrue(store.snapshot().isEmpty)
+    }
+
+    func testRealSessionStaysVisibleWhenInterruptedBySynthetic() {
+        store.apply(hook: hookEvent(.sessionStart))
+        assistantActivity(model: "claude-opus-4-8")
+        advance(2)
+        // Interrupting a live turn appends a <synthetic> message; it must not
+        // clobber the real model and make the conversation vanish.
+        assistantActivity(model: "<synthetic>")
+        let sessions = store.snapshot()
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(sessions[0].model, "claude-opus-4-8")
+    }
+
+    func testSyntheticTurnDoesNotResizeGaugeToDefaultWindow() {
+        store.apply(hook: hookEvent(.sessionStart))
+        store.apply(
+            transcript: TranscriptEvent(
+                sessionId: "s1", cwd: nil,
+                kind: .assistantActivity(AssistantActivity(model: "claude-sonnet-4-5[1m]", contextUsedTokens: 100_000))
+            ),
+            fallbackSessionId: "s1", fallbackProjectPath: "demo"
+        )
+        let listedWindow = store.snapshot()[0].contextWindowTokens
+        XCTAssertEqual(listedWindow, 1_000_000, "1M model should size the gauge")
+        // A synthetic turn carrying usage must keep the gauge on the real
+        // model's window, not fall back to the 200k default.
+        store.apply(
+            transcript: TranscriptEvent(
+                sessionId: "s1", cwd: nil,
+                kind: .assistantActivity(AssistantActivity(model: "<synthetic>", contextUsedTokens: 120_000))
+            ),
+            fallbackSessionId: "s1", fallbackProjectPath: "demo"
+        )
+        XCTAssertEqual(store.snapshot()[0].contextWindowTokens, 1_000_000)
+    }
+
     func testStateChangedAtOnlyMovesOnStatusChange() {
         store.apply(hook: hookEvent(.sessionStart))
         let started = clock!

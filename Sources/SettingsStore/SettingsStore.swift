@@ -4,7 +4,6 @@ import Foundation
 /// UserDefaults-backed preferences (design spec §3).
 public final class SettingsStore: ObservableObject {
     private enum Keys {
-        static let autoPeek = "autoPeek"
         static let stalenessTimeoutMinutes = "stalenessTimeoutMinutes"
         static let didCompleteOnboarding = "didCompleteOnboarding"
         static let hooksConsentGranted = "hooksConsentGranted"
@@ -13,11 +12,6 @@ public final class SettingsStore: ObservableObject {
     }
 
     private let defaults: UserDefaults
-
-    /// Auto-peek the panel for a few seconds when a session needs attention.
-    @Published public var autoPeek: Bool {
-        didSet { defaults.set(autoPeek, forKey: Keys.autoPeek) }
-    }
 
     /// Sessions without any signal for this long are removed.
     @Published public var stalenessTimeoutMinutes: Int {
@@ -51,14 +45,12 @@ public final class SettingsStore: ObservableObject {
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: [
-            Keys.autoPeek: true,
             Keys.stalenessTimeoutMinutes: 30,
             Keys.didCompleteOnboarding: false,
             Keys.hooksConsentGranted: false,
             Keys.demoMode: false,
             Keys.showUsage: true,
         ])
-        autoPeek = defaults.bool(forKey: Keys.autoPeek)
         stalenessTimeoutMinutes = defaults.integer(forKey: Keys.stalenessTimeoutMinutes)
         didCompleteOnboarding = defaults.bool(forKey: Keys.didCompleteOnboarding)
         hooksConsentGranted = defaults.bool(forKey: Keys.hooksConsentGranted)

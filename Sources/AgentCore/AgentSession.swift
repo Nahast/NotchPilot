@@ -107,4 +107,11 @@ public struct AgentSession: Identifiable, Equatable, Sendable {
         else { return nil }
         return min(1.0, max(0.0, Double(used) / Double(window)))
     }
+
+    /// Claude conversations whose model is synthetic or unlisted are noise
+    /// (background/utility turns, not real completions) and are hidden from
+    /// the notch. Scoped to Claude — other agents don't carry Claude model ids.
+    public var isHiddenByModel: Bool {
+        agentKind == .claude && AgentModelClassifier.isSyntheticOrUnlisted(model)
+    }
 }

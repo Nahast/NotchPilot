@@ -13,8 +13,6 @@ public final class NotchViewModel: ObservableObject {
     @Published public private(set) var tokenTally: TokenTally?
     /// Mirrored from the presenter's hover tracking.
     @Published public var isHovering = false
-    /// True while an auto-peek is holding the panel open.
-    @Published public var isPeeking = false
     /// True on displays without a physical notch: the expanded window is the
     /// only state DynamicNotchKit supports there, so the content itself
     /// renders as a small pill until hovered (design spec §2).

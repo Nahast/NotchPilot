@@ -15,7 +15,7 @@ public struct ExpandedPanelView: View {
 
     public var body: some View {
         Group {
-            if model.showsAsFloatingPill, !model.isHovering, !model.isPeeking {
+            if model.showsAsFloatingPill, !model.isHovering {
                 pill
             } else {
                 panel
@@ -37,6 +37,14 @@ public struct ExpandedPanelView: View {
 
     // MARK: Full panel
 
+    /// Fixed width of the expanded card.
+    private static let panelWidth: CGFloat = 560
+    /// Transparent breathing room between text and the window border. At least
+    /// 2% of the window width on every side, plus a little extra so text also
+    /// clears the notch shape's rounded corners (which curve inward past a
+    /// straight inset). 2% of 560 ≈ 11pt; 18pt keeps a comfortable margin.
+    private static let edgeInset: CGFloat = max(18, panelWidth * 0.02)
+
     private var panel: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
@@ -49,8 +57,8 @@ public struct ExpandedPanelView: View {
                 sessionList
             }
         }
-        .padding(14)
-        .frame(width: 560)
+        .padding(Self.edgeInset)
+        .frame(width: Self.panelWidth)
         .background(
             LinearGradient(
                 colors: [

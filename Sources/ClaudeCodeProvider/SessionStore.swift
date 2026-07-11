@@ -202,11 +202,22 @@ final class SessionStore {
                 entry.session.activity = description
             }
             if let model = activity.model, !model.isEmpty {
-                entry.session.model = model
+                // A synthetic/unlisted model (e.g. an interrupted turn's
+                // `<synthetic>` message) must not clobber a real model we've
+                // already recorded — that would make a live conversation
+                // vanish on interrupt. Only record it when we have nothing
+                // yet, so genuinely synthetic-only sessions still carry it
+                // and get hidden.
+                if AgentModelClassifier.isListed(model) || entry.session.model == nil {
+                    entry.session.model = model
+                }
             }
             if let used = activity.contextUsedTokens {
                 entry.session.contextUsedTokens = used
-                entry.session.contextWindowTokens = ModelContextTable.contextWindow(for: activity.model)
+                // Size the gauge off the model the row actually shows (which a
+                // synthetic turn doesn't overwrite), not the raw latest id.
+                entry.session.contextWindowTokens =
+                    ModelContextTable.contextWindow(for: entry.session.model)
             }
             entry.pendingToolUse = activity.issuedToolUse
         case .toolResult:
@@ -361,7 +372,11 @@ final class SessionStore {
     }
 
     /// Sorted snapshot in the canonical ordering (see `AgentSessionOrdering`).
+    /// Synthetic/unlisted-model conversations are dropped here, so they never
+    /// reach the compact dots, panel, counts, or any auto-behavior.
     func snapshot() -> [AgentSession] {
-        AgentSessionOrdering.standardSort(entries.values.map(\.session))
+        AgentSessionOrdering.standardSort(
+            entries.values.map(\.session).filter { !$0.isHiddenByModel }
+        )
     }
 }
