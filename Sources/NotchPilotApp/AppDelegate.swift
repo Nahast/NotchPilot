@@ -140,6 +140,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             .store(in: &cancellables)
+        usageService.signedOutPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] signedOut in
+                Task { @MainActor [weak self] in
+                    self?.model.update(usageSignedOut: signedOut)
+                }
+            }
+            .store(in: &cancellables)
         if demoMode {
             model.update(usage: Self.demoUsage())
         } else {
@@ -182,9 +190,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: Onboarding
 
+    /// Which supported agents exist on this Mac (home directory present).
+    static func detectAgents() -> [AgentDetection] {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        func found(_ dir: String) -> Bool {
+            FileManager.default.fileExists(atPath: home.appendingPathComponent(dir).path)
+        }
+        return [
+            AgentDetection(name: "Claude Code", icon: "asterisk", detected: found(".claude")),
+            AgentDetection(name: "Codex", icon: "hexagon", detected: found(".codex")),
+            AgentDetection(name: "Cursor", icon: "cursorarrow", detected: found(".cursor")),
+        ]
+    }
+
     private func showOnboarding() {
         let view = OnboardingView(
-            claudeDetected: ClaudeCodePaths.isClaudeCodeDetected(),
+            agents: Self.detectAgents(),
             onInstallHooks: { [weak self] in self?.finishOnboarding(installHooks: true) },
             onSkip: { [weak self] in self?.finishOnboarding(installHooks: false) }
         )
@@ -261,7 +282,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 installHooks: { [weak self] in self?.installHooksWithFeedback() },
                 uninstallHooks: { [weak self] in self?.uninstallHooksWithFeedback() },
                 updatesAvailable: { [weak self] in self?.updateService.isAvailable ?? false },
-                checkForUpdates: { [weak self] in self?.updateService.checkForUpdates() }
+                checkForUpdates: { [weak self] in self?.updateService.checkForUpdates() },
+                detectedAgents: { Self.detectAgents() }
             )
         )
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))

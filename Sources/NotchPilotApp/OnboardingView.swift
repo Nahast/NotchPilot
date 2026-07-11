@@ -1,17 +1,31 @@
 import SwiftUI
 
-/// First-run window (design spec §2): explains the app, asks consent for the
-/// one setup step (Claude Code hooks), and warns about the iTerm2 automation
-/// prompt. If `~/.claude` is missing, shows "Claude Code not detected".
+/// One supported agent and whether its home directory was found.
+struct AgentDetection: Identifiable {
+    let name: String
+    let icon: String
+    let detected: Bool
+    var id: String { name }
+}
+
+/// First-run window (design spec §2): explains the app, shows which agents
+/// were detected, asks consent for the one setup step (Claude Code + Cursor
+/// hooks), and warns about the iTerm2 automation prompt.
 struct OnboardingView: View {
-    let claudeDetected: Bool
+    let agents: [AgentDetection]
     let onInstallHooks: () -> Void
     let onSkip: () -> Void
+
+    private var anyDetected: Bool { agents.contains(where: \.detected) }
+    private var cursorDetected: Bool {
+        agents.contains { $0.name == "Cursor" && $0.detected }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             header
-            if claudeDetected {
+            detectionList
+            if anyDetected {
                 consentContent
             } else {
                 notDetectedContent
@@ -27,14 +41,33 @@ struct OnboardingView: View {
                 .font(.title2.bold())
             Text("""
             NotchPilot lives in your notch and shows the live status of your \
-            Claude Code sessions: what each agent is doing, when one is waiting \
-            on you, and how much of its context window is used. Click a session \
-            to jump to its terminal.
+            AI coding agents — Claude Code, Codex, and Cursor: what each one \
+            is doing, when one is waiting on you, and how much context it has \
+            used. Click a session to jump to its window.
             """)
             .font(.callout)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var detectionList: some View {
+        HStack(spacing: 14) {
+            ForEach(agents) { agent in
+                HStack(spacing: 5) {
+                    Image(systemName: agent.detected ? "checkmark.circle.fill" : "circle.dashed")
+                        .foregroundStyle(agent.detected ? .green : .secondary)
+                    Text(agent.name)
+                        .font(.callout)
+                        .foregroundStyle(agent.detected ? .primary : .secondary)
+                }
+                .help(agent.detected
+                    ? "\(agent.name) detected — sessions will appear in the notch"
+                    : "\(agent.name) not found on this Mac")
+            }
+            Spacer()
+        }
+        .padding(.vertical, 2)
     }
 
     private var consentContent: some View {
@@ -47,7 +80,8 @@ struct OnboardingView: View {
                     For reliable status updates, NotchPilot registers Claude Code \
                     hooks — a safe, reversible edit to ~/.claude/settings.json. \
                     A timestamped backup is made first, your existing hooks are \
-                    untouched, and you can remove them anytime from Settings.
+                    untouched, and you can remove them anytime from Settings.\
+                    \(cursorDetected ? " Cursor hooks (~/.cursor/hooks.json) are managed the same way." : "")
                     """)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -93,11 +127,12 @@ struct OnboardingView: View {
         VStack(alignment: .leading, spacing: 16) {
             GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
-                    Label("Claude Code not detected", systemImage: "questionmark.folder")
+                    Label("No agents detected", systemImage: "questionmark.folder")
                         .font(.headline)
                     Text("""
-                    NotchPilot could not find ~/.claude on this Mac. Install and \
-                    run Claude Code at least once, then reopen NotchPilot — it \
+                    NotchPilot could not find Claude Code (~/.claude), Codex \
+                    (~/.codex), or Cursor (~/.cursor) on this Mac. Install and \
+                    run one of them at least once, then reopen NotchPilot — it \
                     will offer to finish setup.
                     """)
                     .font(.caption)

@@ -45,11 +45,21 @@ public struct ExpandedPanelView: View {
     /// straight inset). 2% of 560 ≈ 11pt; 18pt keeps a comfortable margin.
     private static let edgeInset: CGFloat = max(18, panelWidth * 0.02)
 
+    /// "2 working · 1 waiting" — quick glance under the agent count.
+    private var headerSummary: String? {
+        var parts: [String] = []
+        if model.workingCount > 0 { parts.append("\(model.workingCount) working") }
+        if model.attentionCount > 0 { parts.append("\(model.attentionCount) waiting") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
     private var panel: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
             if let usage = model.usage, !usage.windows.isEmpty {
                 UsageBlockView(usage: usage)
+            } else if model.usageSignedOut {
+                usageSignedOutHint
             }
             if model.sessions.isEmpty {
                 emptyState
@@ -86,6 +96,11 @@ public struct ExpandedPanelView: View {
             Text("\(model.groups.active.count) agent\(model.groups.active.count == 1 ? "" : "s")")
                 .font(.system(size: 15, weight: .bold))
                 .foregroundStyle(.white)
+            if let summary = headerSummary {
+                Text(summary)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Color.white.opacity(0.45))
+            }
             if model.isLimitedMode {
                 ChipView(text: "LIMITED", color: Color.white.opacity(0.5))
                     .help("Hooks are not installed — statuses are heuristics from transcript activity only.")
@@ -114,11 +129,34 @@ public struct ExpandedPanelView: View {
         }
     }
 
+    /// Shown when usage is enabled but Claude Code has no stored credentials.
+    private var usageSignedOutHint: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "person.crop.circle.badge.exclamationmark")
+                .font(.system(size: 10))
+            Text("Sign in to Claude Code (`claude login`) to see usage limits")
+                .font(.system(size: 10))
+        }
+        .foregroundStyle(Color.white.opacity(0.4))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color.white.opacity(0.04))
+        )
+    }
+
     private var emptyState: some View {
-        Text("No active Claude Code sessions")
-            .font(.system(size: 11))
-            .foregroundStyle(Color.white.opacity(0.5))
-            .frame(maxWidth: .infinity, minHeight: 48)
+        VStack(spacing: 4) {
+            Text("No agent sessions yet")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color.white.opacity(0.55))
+            Text("Claude Code, Codex, and Cursor sessions appear here automatically.")
+                .font(.system(size: 10))
+                .foregroundStyle(Color.white.opacity(0.35))
+        }
+        .frame(maxWidth: .infinity, minHeight: 52)
     }
 
     /// Many sessions → cap height and scroll (design spec §5). Overflowing

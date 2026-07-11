@@ -9,6 +9,9 @@ public final class NotchViewModel: ObservableObject {
     @Published public private(set) var isLimitedMode = false
     /// Claude rate-limit windows (5h/7d/per-model); nil hides the block.
     @Published public private(set) var usage: UsageSnapshot?
+    /// Usage is enabled but Claude Code has no stored credentials — the
+    /// panel shows a sign-in hint instead of silently hiding the section.
+    @Published public private(set) var usageSignedOut = false
     /// Tokens consumed today; nil hides the header chip.
     @Published public private(set) var tokenTally: TokenTally?
     /// Mirrored from the presenter's hover tracking.
@@ -35,6 +38,10 @@ public final class NotchViewModel: ObservableObject {
 
     public func update(usage: UsageSnapshot?) {
         self.usage = usage
+    }
+
+    public func update(usageSignedOut: Bool) {
+        self.usageSignedOut = usageSignedOut
     }
 
     public func update(tokenTally: TokenTally?) {

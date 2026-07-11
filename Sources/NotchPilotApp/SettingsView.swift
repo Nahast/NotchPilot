@@ -8,6 +8,7 @@ struct SettingsActions {
     var uninstallHooks: () -> Void
     var updatesAvailable: () -> Bool
     var checkForUpdates: () -> Void
+    var detectedAgents: () -> [AgentDetection]
 }
 
 /// Settings window (design spec §2): launch at login, auto-peek toggle,
@@ -36,7 +37,22 @@ struct SettingsView: View {
                 )
             }
 
-            Section("Claude Code hooks") {
+            Section("Connected agents") {
+                ForEach(actions.detectedAgents()) { agent in
+                    HStack {
+                        Image(systemName: agent.detected ? "checkmark.circle.fill" : "circle.dashed")
+                            .foregroundStyle(agent.detected ? .green : .secondary)
+                        Text(agent.name)
+                        Spacer()
+                        Text(agent.detected ? "Monitoring" : "Not found")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .font(.callout)
+                }
+            }
+
+            Section("Agent hooks") {
                 HStack {
                     Image(systemName: hooksInstalled ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
                         .foregroundStyle(hooksInstalled ? .green : .orange)
@@ -56,9 +72,14 @@ struct SettingsView: View {
                         refreshStatus()
                     }
                 }
-                Text("Hooks are a reversible edit to ~/.claude/settings.json; a timestamped backup is made before every change.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Text("""
+                Hooks are reversible edits to ~/.claude/settings.json and — when \
+                Cursor is installed — ~/.cursor/hooks.json; a timestamped backup \
+                is made before every change. Codex needs no hooks: its \
+                transcripts carry status events natively.
+                """)
+                .font(.caption)
+                .foregroundStyle(.secondary)
             }
 
             if actions.updatesAvailable() {

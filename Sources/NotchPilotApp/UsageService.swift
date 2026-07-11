@@ -16,13 +16,18 @@ final class UsageService {
     private static let keychainService = "Claude Code-credentials"
 
     let snapshotPublisher: AnyPublisher<UsageSnapshot?, Never>
+    /// True when usage is enabled but no Claude Code credentials exist in the
+    /// Keychain — the UI shows a sign-in hint instead of silently hiding.
+    let signedOutPublisher: AnyPublisher<Bool, Never>
     private let snapshotSubject = CurrentValueSubject<UsageSnapshot?, Never>(nil)
+    private let signedOutSubject = CurrentValueSubject<Bool, Never>(false)
     private let isEnabled: () -> Bool
     private var timer: Timer?
 
     init(isEnabled: @escaping () -> Bool) {
         self.isEnabled = isEnabled
         snapshotPublisher = snapshotSubject.eraseToAnyPublisher()
+        signedOutPublisher = signedOutSubject.removeDuplicates().eraseToAnyPublisher()
     }
 
     func start(refreshInterval: TimeInterval = 120) {
@@ -41,14 +46,19 @@ final class UsageService {
     func refresh() {
         guard isEnabled() else {
             snapshotSubject.send(nil)
+            signedOutSubject.send(false)
             return
         }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
             guard let token = Self.readAccessToken() else {
-                DispatchQueue.main.async { self.snapshotSubject.send(nil) }
+                DispatchQueue.main.async {
+                    self.snapshotSubject.send(nil)
+                    self.signedOutSubject.send(true)
+                }
                 return
             }
+            DispatchQueue.main.async { self.signedOutSubject.send(false) }
             var request = URLRequest(url: Self.usageURL)
             request.httpMethod = "GET"
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
