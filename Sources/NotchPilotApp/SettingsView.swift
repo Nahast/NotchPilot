@@ -43,6 +43,24 @@ struct SettingsView: View {
                 )
             }
 
+            Section("Usage data") {
+                Label {
+                    Text("""
+                    To show Claude rate-limit usage in the notch window, you \
+                    must be signed in to Claude Code in the terminal — run \
+                    `claude login` if the usage bars don't appear. NotchPilot \
+                    reads the credentials Claude Code stores in your Keychain; \
+                    macOS asks for permission once.
+                    """)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                }
+            }
+
             Section("Connected agents") {
                 ForEach(agents) { agent in
                     agentRow(agent)
