@@ -129,10 +129,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        presenter = DynamicNotchKitPresenter(
-            model: model,
-            autoPeekEnabled: { settingsStore.autoPeek }
-        )
+        presenter = DynamicNotchKitPresenter(model: model)
 
         usageService = UsageService(isEnabled: { settingsStore.showUsage })
         usageService.snapshotPublisher

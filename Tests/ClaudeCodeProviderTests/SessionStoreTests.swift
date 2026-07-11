@@ -57,6 +57,44 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(store.snapshot()[0].activity, "Waiting for your approval")
     }
 
+    private func assistantActivity(session: String = "s1", model: String?) {
+        store.apply(
+            transcript: TranscriptEvent(
+                sessionId: session,
+                cwd: nil,
+                kind: .assistantActivity(AssistantActivity(model: model))
+            ),
+            fallbackSessionId: session,
+            fallbackProjectPath: "demo"
+        )
+    }
+
+    func testSyntheticOnlySessionIsHidden() {
+        store.apply(hook: hookEvent(.sessionStart))
+        assistantActivity(model: "<synthetic>")
+        // A conversation that has only ever produced synthetic messages is
+        // noise — dropped from the snapshot entirely.
+        XCTAssertTrue(store.snapshot().isEmpty)
+    }
+
+    func testUnlistedModelSessionIsHidden() {
+        store.apply(hook: hookEvent(.sessionStart))
+        assistantActivity(model: "some-internal-model")
+        XCTAssertTrue(store.snapshot().isEmpty)
+    }
+
+    func testRealSessionStaysVisibleWhenInterruptedBySynthetic() {
+        store.apply(hook: hookEvent(.sessionStart))
+        assistantActivity(model: "claude-opus-4-8")
+        advance(2)
+        // Interrupting a live turn appends a <synthetic> message; it must not
+        // clobber the real model and make the conversation vanish.
+        assistantActivity(model: "<synthetic>")
+        let sessions = store.snapshot()
+        XCTAssertEqual(sessions.count, 1)
+        XCTAssertEqual(sessions[0].model, "claude-opus-4-8")
+    }
+
     func testStateChangedAtOnlyMovesOnStatusChange() {
         store.apply(hook: hookEvent(.sessionStart))
         let started = clock!

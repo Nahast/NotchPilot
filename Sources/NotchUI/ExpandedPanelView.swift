@@ -15,7 +15,7 @@ public struct ExpandedPanelView: View {
 
     public var body: some View {
         Group {
-            if model.showsAsFloatingPill, !model.isHovering, !model.isPeeking {
+            if model.showsAsFloatingPill, !model.isHovering {
                 pill
             } else {
                 panel

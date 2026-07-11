@@ -27,7 +27,6 @@ struct SettingsView: View {
                     .onChange(of: launchAtLogin) { newValue in
                         LaunchAtLogin.setEnabled(newValue)
                     }
-                Toggle("Auto-peek when a session needs attention", isOn: $settings.autoPeek)
                 Toggle("Show Claude usage limits", isOn: $settings.showUsage)
                 Stepper(
                     "Remove stale sessions after \(settings.stalenessTimeoutMinutes) min",
