@@ -48,6 +48,13 @@ public struct UsageSnapshot: Equatable, Sendable {
             guard let window = value as? [String: Any],
                   let utilization = window["utilization"] as? Double
             else { continue }
+            // Windows the API itself marks disabled are not real limits.
+            if window["is_enabled"] as? Bool == false { continue }
+            // Extra-usage / credit entries only matter once something is
+            // actually consumed — an untouched "extra usage: 100% left" row
+            // is noise for users who haven't bought or used credits.
+            let isExtraUsage = key.contains("extra") || key.contains("credit") || key.contains("overage")
+            if isExtraUsage, utilization <= 0 { continue }
             let resetsAt = (window["resets_at"] as? String).flatMap(parseDate)
             windows.append(UsageWindow(
                 key: key,

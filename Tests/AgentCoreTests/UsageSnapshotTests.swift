@@ -34,6 +34,42 @@ final class UsageSnapshotTests: XCTestCase {
         XCTAssertEqual(UsageSnapshot.label(forKey: "thirty_day"), "Thirty Day")
     }
 
+    func testUntouchedExtraUsageIsHidden() throws {
+        let json = """
+        {
+            "five_hour": {"utilization": 16},
+            "extra_usage": {"utilization": 0},
+            "monthly_credits": {"utilization": 0}
+        }
+        """
+        let snapshot = try XCTUnwrap(UsageSnapshot.parse(from: Data(json.utf8)))
+        XCTAssertEqual(snapshot.windows.map(\.key), ["five_hour"],
+                       "zero-usage extra/credit windows are noise")
+    }
+
+    func testConsumedExtraUsageIsShown() throws {
+        let json = """
+        {
+            "five_hour": {"utilization": 16},
+            "extra_usage": {"utilization": 35}
+        }
+        """
+        let snapshot = try XCTUnwrap(UsageSnapshot.parse(from: Data(json.utf8)))
+        XCTAssertEqual(snapshot.windows.count, 2, "real credit consumption stays visible")
+        XCTAssertEqual(snapshot.windows[1].usedFraction, 0.35, accuracy: 0.001)
+    }
+
+    func testApiDisabledWindowsAreSkipped() throws {
+        let json = """
+        {
+            "five_hour": {"utilization": 16},
+            "seven_day_opus": {"utilization": 12, "is_enabled": false}
+        }
+        """
+        let snapshot = try XCTUnwrap(UsageSnapshot.parse(from: Data(json.utf8)))
+        XCTAssertEqual(snapshot.windows.map(\.key), ["five_hour"])
+    }
+
     func testUtilizationClamped() throws {
         let json = #"{"five_hour": {"utilization": 250}}"#
         let snapshot = try XCTUnwrap(UsageSnapshot.parse(from: Data(json.utf8)))
