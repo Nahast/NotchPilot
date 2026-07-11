@@ -91,8 +91,19 @@ struct SettingsView: View {
             }
 
             Section("About") {
-                Text("NotchPilot \(appVersion)")
-                    .font(.callout)
+                HStack(spacing: 8) {
+                    Text("NotchPilot \(appVersion)")
+                        .font(.callout)
+                    Text("BETA")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .kerning(0.5)
+                        .foregroundStyle(.orange)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.orange.opacity(0.12)))
+                        .overlay(Capsule().stroke(Color.orange.opacity(0.55), lineWidth: 1))
+                        .help("NotchPilot is a beta — expect rough edges; feedback welcome")
+                }
                 Text("""
                 Local processing. Network traffic: the Sparkle update check, \
                 and — when usage limits are shown — Anthropic's usage endpoint, \
@@ -100,6 +111,14 @@ struct SettingsView: View {
                 """)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                HStack(spacing: 4) {
+                    Text("Questions or feedback?")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Link("rjouffret@warp-lab.ai",
+                         destination: URL(string: "mailto:rjouffret@warp-lab.ai")!)
+                        .font(.caption)
+                }
             }
         }
         .formStyle(.grouped)
