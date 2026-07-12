@@ -19,8 +19,12 @@ final class UsageService {
     /// True when usage is enabled but no Claude Code credentials exist in the
     /// Keychain — the UI shows a sign-in hint instead of silently hiding.
     let signedOutPublisher: AnyPublisher<Bool, Never>
+    /// True while a rate-limit (429) backoff is pending — the UI shows a
+    /// loading row so an empty usage block reads as "waiting", not "broken".
+    let waitingPublisher: AnyPublisher<Bool, Never>
     private let snapshotSubject = CurrentValueSubject<UsageSnapshot?, Never>(nil)
     private let signedOutSubject = CurrentValueSubject<Bool, Never>(false)
+    private let waitingSubject = CurrentValueSubject<Bool, Never>(false)
     private let isEnabled: () -> Bool
     private var timer: Timer?
     /// Survives a disable/enable cycle so re-enabling can show numbers
@@ -33,6 +37,7 @@ final class UsageService {
         self.isEnabled = isEnabled
         snapshotPublisher = snapshotSubject.eraseToAnyPublisher()
         signedOutPublisher = signedOutSubject.removeDuplicates().eraseToAnyPublisher()
+        waitingPublisher = waitingSubject.removeDuplicates().eraseToAnyPublisher()
     }
 
     func start(refreshInterval: TimeInterval = 120) {
@@ -52,6 +57,7 @@ final class UsageService {
         guard isEnabled() else {
             snapshotSubject.send(nil)
             signedOutSubject.send(false)
+            waitingSubject.send(false)
             return
         }
         // Respect a pending rate-limit backoff — extra requests during the
@@ -77,16 +83,14 @@ final class UsageService {
 
             let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 let snapshot: UsageSnapshot?
-                if let data,
-                   let http = response as? HTTPURLResponse,
-                   (200..<300).contains(http.statusCode) {
+                let http = response as? HTTPURLResponse
+                let status = http?.statusCode ?? -1
+                if let data, (200..<300).contains(status) {
                     snapshot = UsageSnapshot.parse(from: data)
                     NSLog("NotchPilot usage: HTTP %d, parsed %d window(s)",
-                          http.statusCode, snapshot?.windows.count ?? 0)
+                          status, snapshot?.windows.count ?? 0)
                 } else {
                     snapshot = nil
-                    let http = response as? HTTPURLResponse
-                    let status = http?.statusCode ?? -1
                     NSLog("NotchPilot usage: fetch failed (HTTP %d, error: %@)",
                           status, error?.localizedDescription ?? "none")
                     // Rate limited: retry after the server-suggested delay
@@ -100,6 +104,9 @@ final class UsageService {
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     if snapshot != nil { self.cachedSnapshot = snapshot }
+                    // A rate-limited fetch keeps its "waiting" state (set by
+                    // scheduleRetry); any other outcome resolves it.
+                    if status != 429 { self.waitingSubject.send(false) }
                     // Keep showing the last good snapshot through transient
                     // failures; it ages out visually via fetchedAt if needed.
                     if snapshot != nil || self.snapshotSubject.value == nil {
@@ -113,7 +120,9 @@ final class UsageService {
 
     private func scheduleRetry(after seconds: Double) {
         DispatchQueue.main.async { [weak self] in
-            guard let self, !self.retryScheduled else { return }
+            guard let self else { return }
+            self.waitingSubject.send(true)
+            guard !self.retryScheduled else { return }
             self.retryScheduled = true
             NSLog("NotchPilot usage: retrying in %.0fs", seconds)
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in

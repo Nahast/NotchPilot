@@ -92,6 +92,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             .store(in: &cancellables)
+        usageService.waitingPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] waiting in
+                Task { @MainActor [weak self] in
+                    self?.model.update(usageWaiting: waiting)
+                }
+            }
+            .store(in: &cancellables)
         if demoMode {
             model.update(usage: Self.demoUsage())
         } else {
@@ -258,6 +266,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             model.update(usage: nil)
             model.update(usageSignedOut: false)
+            model.update(usageWaiting: false)
         }
         usageService.refresh()
     }
