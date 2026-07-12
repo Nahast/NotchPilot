@@ -32,7 +32,8 @@ enum LegalDocument: String, Identifiable, CaseIterable {
     }
 }
 
-/// Plain scrollable reader — legal text wants legibility, not chrome.
+/// Scrollable reader rendering the documents' markdown properly: headings,
+/// lists, and paragraphs as blocks; bold/code/links inline.
 struct LegalDocumentView: View {
     let document: LegalDocument
     let onClose: () -> Void
@@ -40,10 +41,14 @@ struct LegalDocumentView: View {
     var body: some View {
         VStack(spacing: 0) {
             ScrollView {
-                Text(attributed)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(20)
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(MarkdownBlock.parse(document.text)) { block in
+                        blockView(block)
+                    }
+                }
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(24)
             }
             Divider()
             HStack {
@@ -53,16 +58,123 @@ struct LegalDocumentView: View {
             }
             .padding(12)
         }
-        .frame(width: 560, height: 480)
+        .frame(width: 600, height: 520)
     }
 
-    /// Best-effort markdown rendering; falls back to the raw text.
-    private var attributed: AttributedString {
+    @ViewBuilder
+    private func blockView(_ block: MarkdownBlock) -> some View {
+        switch block.kind {
+        case .heading1:
+            Text(inline(block.text))
+                .font(.title2.bold())
+        case .heading2:
+            Text(inline(block.text))
+                .font(.headline)
+                .padding(.top, 8)
+        case .paragraph:
+            Text(inline(block.text))
+                .font(.system(size: 12.5))
+                .lineSpacing(2.5)
+        case .listItem:
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Text(block.marker)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                Text(inline(block.text))
+                    .font(.system(size: 12.5))
+                    .lineSpacing(2.5)
+            }
+            .padding(.leading, 8)
+        }
+    }
+
+    /// Inline markdown (bold, code, links); falls back to the raw text.
+    private func inline(_ text: String) -> AttributedString {
         (try? AttributedString(
-            markdown: document.text,
+            markdown: text,
             options: AttributedString.MarkdownParsingOptions(
                 interpretedSyntax: .inlineOnlyPreservingWhitespace
             )
-        )) ?? AttributedString(document.text)
+        )) ?? AttributedString(text)
+    }
+}
+
+/// Minimal block-level markdown model covering what the legal documents use:
+/// `#`/`##` headings, `-` bullets, `1.` ordered items (with indented
+/// continuation lines), and paragraphs joined across soft line wraps.
+struct MarkdownBlock: Identifiable {
+    enum Kind { case heading1, heading2, paragraph, listItem }
+
+    let id: Int
+    let kind: Kind
+    var text: String
+    var marker: String = ""
+
+    static func parse(_ markdown: String) -> [MarkdownBlock] {
+        var blocks: [MarkdownBlock] = []
+        var paragraph: [String] = []
+
+        func flushParagraph() {
+            guard !paragraph.isEmpty else { return }
+            blocks.append(MarkdownBlock(
+                id: blocks.count, kind: .paragraph,
+                text: paragraph.joined(separator: " ")
+            ))
+            paragraph = []
+        }
+
+        for rawLine in markdown.components(separatedBy: "\n") {
+            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+
+            if trimmed.isEmpty {
+                flushParagraph()
+                continue
+            }
+            if trimmed.hasPrefix("## ") {
+                flushParagraph()
+                blocks.append(MarkdownBlock(
+                    id: blocks.count, kind: .heading2,
+                    text: String(trimmed.dropFirst(3))
+                ))
+                continue
+            }
+            if trimmed.hasPrefix("# ") {
+                flushParagraph()
+                blocks.append(MarkdownBlock(
+                    id: blocks.count, kind: .heading1,
+                    text: String(trimmed.dropFirst(2))
+                ))
+                continue
+            }
+            if trimmed.hasPrefix("- ") {
+                flushParagraph()
+                blocks.append(MarkdownBlock(
+                    id: blocks.count, kind: .listItem,
+                    text: String(trimmed.dropFirst(2)), marker: "•"
+                ))
+                continue
+            }
+            if let dot = trimmed.firstIndex(of: "."),
+               trimmed[..<dot].allSatisfy(\.isNumber), !trimmed[..<dot].isEmpty,
+               trimmed[trimmed.index(after: dot)...].hasPrefix(" ") {
+                flushParagraph()
+                blocks.append(MarkdownBlock(
+                    id: blocks.count, kind: .listItem,
+                    text: trimmed[trimmed.index(dot, offsetBy: 2)...]
+                        .trimmingCharacters(in: .whitespaces),
+                    marker: String(trimmed[...dot])
+                ))
+                continue
+            }
+            // Indented continuation of the previous list item.
+            if rawLine.hasPrefix("  "), paragraph.isEmpty,
+               let last = blocks.indices.last, blocks[last].kind == .listItem {
+                blocks[last].text += " " + trimmed
+                continue
+            }
+            paragraph.append(trimmed)
+        }
+        flushParagraph()
+        return blocks
     }
 }
