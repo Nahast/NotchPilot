@@ -23,6 +23,9 @@ final class UsageService {
     private let signedOutSubject = CurrentValueSubject<Bool, Never>(false)
     private let isEnabled: () -> Bool
     private var timer: Timer?
+    /// Survives a disable/enable cycle so re-enabling can show numbers
+    /// instantly (slightly stale) while the fresh fetch is in flight.
+    private(set) var cachedSnapshot: UsageSnapshot?
 
     init(isEnabled: @escaping () -> Bool) {
         self.isEnabled = isEnabled
@@ -77,6 +80,7 @@ final class UsageService {
                 }
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
+                    if snapshot != nil { self.cachedSnapshot = snapshot }
                     // Keep showing the last good snapshot through transient
                     // failures; it ages out visually via fetchedAt if needed.
                     if snapshot != nil || self.snapshotSubject.value == nil {

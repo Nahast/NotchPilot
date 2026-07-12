@@ -12,6 +12,7 @@ struct SettingsActions {
     var detectedAgents: () -> [AgentDetection]
     var connectAgent: (AgentKind) -> Void
     var disconnectAgent: (AgentKind) -> Void
+    var usageToggled: (Bool) -> Void
 }
 
 /// Settings window (design spec §2): launch at login, auto-peek toggle,
@@ -80,6 +81,9 @@ struct SettingsView: View {
                     LaunchAtLogin.setEnabled(newValue)
                 }
             Toggle("Show Claude usage limits", isOn: $settings.showUsage)
+                .onChange(of: settings.showUsage) { newValue in
+                    actions.usageToggled(newValue)
+                }
             Stepper(
                 "Remove stale sessions after \(settings.stalenessTimeoutMinutes) min",
                 value: $settings.stalenessTimeoutMinutes,

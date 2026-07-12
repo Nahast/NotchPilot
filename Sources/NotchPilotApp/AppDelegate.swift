@@ -98,23 +98,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             usageService.start()
         }
 
-        // React to the "Show Claude usage limits" toggle immediately —
-        // the service otherwise only consults it on its periodic refresh.
-        // receive(on:) matters: @Published emits on willSet, so the hop
-        // ensures refresh() reads the NEW value.
-        settingsStore.$showUsage
-            .dropFirst()
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
-                if self.demoMode {
-                    self.model.update(usage: settingsStore.showUsage ? Self.demoUsage() : nil)
-                } else {
-                    self.usageService.refresh()
-                }
-            }
-            .store(in: &cancellables)
-
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
@@ -261,6 +244,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ]
     }
 
+    /// Called synchronously from the Settings toggle: the panel must react
+    /// instantly, not on the service's 120s timer or a network round-trip.
+    func setUsageVisible(_ visible: Bool) {
+        if demoMode {
+            model.update(usage: visible ? Self.demoUsage() : nil)
+            return
+        }
+        if visible {
+            // Show the last good snapshot immediately; the refresh then
+            // replaces it with fresh numbers when the network answers.
+            model.update(usage: usageService.cachedSnapshot)
+        } else {
+            model.update(usage: nil)
+            model.update(usageSignedOut: false)
+        }
+        usageService.refresh()
+    }
+
     /// Reconnect an agent after its per-provider onboarding: re-enable
     /// monitoring and (re)install that agent's hooks.
     func connectAgent(_ kind: AgentKind) {
@@ -396,7 +397,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 checkForUpdates: { [weak self] in self?.updateService.checkForUpdates() },
                 detectedAgents: { [weak self] in self?.detectAgents() ?? [] },
                 connectAgent: { [weak self] kind in self?.connectAgent(kind) },
-                disconnectAgent: { [weak self] kind in self?.disconnectAgent(kind) }
+                disconnectAgent: { [weak self] kind in self?.disconnectAgent(kind) },
+                usageToggled: { [weak self] visible in self?.setUsageVisible(visible) }
             )
         )
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
