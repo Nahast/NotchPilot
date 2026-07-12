@@ -26,6 +26,8 @@ final class UsageService {
     /// Survives a disable/enable cycle so re-enabling can show numbers
     /// instantly (slightly stale) while the fresh fetch is in flight.
     private(set) var cachedSnapshot: UsageSnapshot?
+    /// One pending rate-limit retry at a time.
+    private var retryScheduled = false
 
     init(isEnabled: @escaping () -> Bool) {
         self.isEnabled = isEnabled
@@ -52,9 +54,13 @@ final class UsageService {
             signedOutSubject.send(false)
             return
         }
+        // Respect a pending rate-limit backoff — extra requests during the
+        // window (periodic timer, toggle) would only extend the throttle.
+        if retryScheduled { return }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
             guard let token = Self.readAccessToken() else {
+                NSLog("NotchPilot usage: no Claude Code credentials in Keychain (denied or absent)")
                 DispatchQueue.main.async {
                     self.snapshotSubject.send(nil)
                     self.signedOutSubject.send(true)
@@ -69,14 +75,27 @@ final class UsageService {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.timeoutInterval = 15
 
-            let task = URLSession.shared.dataTask(with: request) { data, response, _ in
+            let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 let snapshot: UsageSnapshot?
                 if let data,
                    let http = response as? HTTPURLResponse,
                    (200..<300).contains(http.statusCode) {
                     snapshot = UsageSnapshot.parse(from: data)
+                    NSLog("NotchPilot usage: HTTP %d, parsed %d window(s)",
+                          http.statusCode, snapshot?.windows.count ?? 0)
                 } else {
                     snapshot = nil
+                    let http = response as? HTTPURLResponse
+                    let status = http?.statusCode ?? -1
+                    NSLog("NotchPilot usage: fetch failed (HTTP %d, error: %@)",
+                          status, error?.localizedDescription ?? "none")
+                    // Rate limited: retry after the server-suggested delay
+                    // instead of going blank until the 120s timer.
+                    if status == 429 {
+                        let suggested = http?.value(forHTTPHeaderField: "Retry-After")
+                            .flatMap(Double.init) ?? 60
+                        self.scheduleRetry(after: min(600, max(30, suggested)))
+                    }
                 }
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
@@ -89,6 +108,18 @@ final class UsageService {
                 }
             }
             task.resume()
+        }
+    }
+
+    private func scheduleRetry(after seconds: Double) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.retryScheduled else { return }
+            self.retryScheduled = true
+            NSLog("NotchPilot usage: retrying in %.0fs", seconds)
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+                self?.retryScheduled = false
+                self?.refresh()
+            }
         }
     }
 
