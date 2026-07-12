@@ -48,6 +48,13 @@ public struct UsageSnapshot: Equatable, Sendable {
             guard let window = value as? [String: Any],
                   let utilization = window["utilization"] as? Double
             else { continue }
+            // Windows the API itself marks disabled are not real limits.
+            if window["is_enabled"] as? Bool == false { continue }
+            // Extra-usage / credit entries only matter once something is
+            // actually consumed — an untouched "extra usage: 100% left" row
+            // is noise for users who haven't bought or used credits.
+            let isExtraUsage = key.contains("extra") || key.contains("credit") || key.contains("overage")
+            if isExtraUsage, utilization <= 0 { continue }
             let resetsAt = (window["resets_at"] as? String).flatMap(parseDate)
             windows.append(UsageWindow(
                 key: key,
@@ -61,26 +68,25 @@ public struct UsageSnapshot: Equatable, Sendable {
         return UsageSnapshot(windows: windows, fetchedAt: fetchedAt)
     }
 
-    /// "five_hour" → "5h", "seven_day" → "7d", "seven_day_opus" → "7d Opus",
-    /// unknown keys degrade to a readable form instead of disappearing.
+    /// "five_hour" → "5-hour limit", "seven_day" → "Weekly · all models",
+    /// "seven_day_opus" → "Weekly · Opus"; unknown keys degrade to a
+    /// readable form instead of disappearing.
     public static func label(forKey key: String) -> String {
-        var rest = key
-        var prefix = ""
-        if rest.hasPrefix("five_hour") {
-            prefix = "5h"
-            rest = String(rest.dropFirst("five_hour".count))
-        } else if rest.hasPrefix("seven_day") {
-            prefix = "7d"
-            rest = String(rest.dropFirst("seven_day".count))
+        func titled(_ rest: some StringProtocol) -> String {
+            rest.split(separator: "_")
+                .map { $0.prefix(1).uppercased() + $0.dropFirst() }
+                .joined(separator: " ")
         }
-        let suffix = rest
-            .split(separator: "_")
-            .map { $0.prefix(1).uppercased() + $0.dropFirst() }
-            .joined(separator: " ")
-        if prefix.isEmpty {
-            return suffix.isEmpty ? key : suffix
+        if key == "five_hour" { return "5-hour limit" }
+        if key == "seven_day" { return "Weekly · all models" }
+        if key.hasPrefix("seven_day_") {
+            return "Weekly · \(titled(key.dropFirst("seven_day_".count)))"
         }
-        return suffix.isEmpty ? prefix : "\(prefix) \(suffix)"
+        if key.hasPrefix("five_hour_") {
+            return "5-hour · \(titled(key.dropFirst("five_hour_".count)))"
+        }
+        let readable = titled(key)
+        return readable.isEmpty ? key : readable
     }
 
     private static func rank(_ key: String) -> String {

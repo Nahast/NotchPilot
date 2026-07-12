@@ -92,6 +92,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
             .store(in: &cancellables)
+        usageService.waitingPublisher
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] waiting in
+                Task { @MainActor [weak self] in
+                    self?.model.update(usageWaiting: waiting)
+                }
+            }
+            .store(in: &cancellables)
         if demoMode {
             model.update(usage: Self.demoUsage())
         } else {
@@ -124,9 +132,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static func demoUsage() -> UsageSnapshot {
         UsageSnapshot(
             windows: [
-                UsageWindow(key: "five_hour", label: "5h", usedFraction: 0.16, resetsAt: Date().addingTimeInterval(2.4 * 3600)),
-                UsageWindow(key: "seven_day", label: "7d", usedFraction: 0.19, resetsAt: Date().addingTimeInterval(4.2 * 86_400)),
-                UsageWindow(key: "seven_day_fable", label: "7d Fable", usedFraction: 0.34, resetsAt: Date().addingTimeInterval(4.2 * 86_400)),
+                UsageWindow(key: "five_hour", label: "5-hour limit", usedFraction: 0.16, resetsAt: Date().addingTimeInterval(2.4 * 3600)),
+                UsageWindow(key: "seven_day", label: "Weekly · all models", usedFraction: 0.19, resetsAt: Date().addingTimeInterval(4.2 * 86_400)),
+                UsageWindow(key: "seven_day_fable", label: "Weekly · Fable", usedFraction: 0.34, resetsAt: Date().addingTimeInterval(4.2 * 86_400)),
             ],
             fetchedAt: Date()
         )
@@ -242,6 +250,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AgentDetection(kind: .cursor, name: "Cursor", icon: "cursorarrow",
                            detected: found(".cursor"), enabled: settings.cursorEnabled),
         ]
+    }
+
+    /// Called synchronously from the Settings toggle: the panel must react
+    /// instantly, not on the service's 120s timer or a network round-trip.
+    func setUsageVisible(_ visible: Bool) {
+        if demoMode {
+            model.update(usage: visible ? Self.demoUsage() : nil)
+            return
+        }
+        if visible {
+            // Show the last good snapshot immediately; the refresh then
+            // replaces it with fresh numbers when the network answers.
+            model.update(usage: usageService.cachedSnapshot)
+        } else {
+            model.update(usage: nil)
+            model.update(usageSignedOut: false)
+            model.update(usageWaiting: false)
+        }
+        usageService.refresh()
     }
 
     /// Reconnect an agent after its per-provider onboarding: re-enable
@@ -379,7 +406,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 checkForUpdates: { [weak self] in self?.updateService.checkForUpdates() },
                 detectedAgents: { [weak self] in self?.detectAgents() ?? [] },
                 connectAgent: { [weak self] kind in self?.connectAgent(kind) },
-                disconnectAgent: { [weak self] kind in self?.disconnectAgent(kind) }
+                disconnectAgent: { [weak self] kind in self?.disconnectAgent(kind) },
+                usageToggled: { [weak self] visible in self?.setUsageVisible(visible) }
             )
         )
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))

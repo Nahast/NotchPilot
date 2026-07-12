@@ -60,6 +60,8 @@ public struct ExpandedPanelView: View {
                 UsageBlockView(usage: usage)
             } else if model.usageSignedOut {
                 usageSignedOutHint
+            } else if model.usageWaiting {
+                usageWaitingHint
             }
             if model.sessions.isEmpty {
                 emptyState
@@ -138,6 +140,23 @@ public struct ExpandedPanelView: View {
             Image(systemName: "person.crop.circle.badge.exclamationmark")
                 .font(.system(size: 10))
             Text("Sign in to Claude Code (`claude login`) to see usage limits")
+                .font(.system(size: 10))
+        }
+        .foregroundStyle(Color.white.opacity(0.4))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color.white.opacity(0.04))
+        )
+    }
+
+    /// Shown while a rate-limited usage fetch waits to retry.
+    private var usageWaitingHint: some View {
+        HStack(spacing: 6) {
+            LoadingDotsView()
+            Text("Waiting for usage data from Claude…")
                 .font(.system(size: 10))
         }
         .foregroundStyle(Color.white.opacity(0.4))
@@ -254,6 +273,29 @@ struct ChipView: View {
     }
 }
 
+/// Three staggered pulsing dots — the panel's loading indicator.
+struct LoadingDotsView: View {
+    @State private var pulsing = false
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<3, id: \.self) { index in
+                Circle()
+                    .fill(Color.white.opacity(0.6))
+                    .frame(width: 4, height: 4)
+                    .opacity(pulsing ? 1 : 0.25)
+                    .animation(
+                        .easeInOut(duration: 0.6)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(index) * 0.2),
+                        value: pulsing
+                    )
+            }
+        }
+        .onAppear { pulsing = true }
+    }
+}
+
 /// Claude rate-limit windows: one bar per window (5h, 7d, per-model).
 struct UsageBlockView: View {
     let usage: UsageSnapshot
@@ -288,7 +330,7 @@ struct UsageWindowRow: View {
             Text(window.label)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(Color.white.opacity(0.45))
-                .frame(width: 64, alignment: .leading)
+                .frame(width: 124, alignment: .leading)
             GeometryReader { geometry in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.12))

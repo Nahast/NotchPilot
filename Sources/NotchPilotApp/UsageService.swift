@@ -19,15 +19,25 @@ final class UsageService {
     /// True when usage is enabled but no Claude Code credentials exist in the
     /// Keychain — the UI shows a sign-in hint instead of silently hiding.
     let signedOutPublisher: AnyPublisher<Bool, Never>
+    /// True while a rate-limit (429) backoff is pending — the UI shows a
+    /// loading row so an empty usage block reads as "waiting", not "broken".
+    let waitingPublisher: AnyPublisher<Bool, Never>
     private let snapshotSubject = CurrentValueSubject<UsageSnapshot?, Never>(nil)
     private let signedOutSubject = CurrentValueSubject<Bool, Never>(false)
+    private let waitingSubject = CurrentValueSubject<Bool, Never>(false)
     private let isEnabled: () -> Bool
     private var timer: Timer?
+    /// Survives a disable/enable cycle so re-enabling can show numbers
+    /// instantly (slightly stale) while the fresh fetch is in flight.
+    private(set) var cachedSnapshot: UsageSnapshot?
+    /// One pending rate-limit retry at a time.
+    private var retryScheduled = false
 
     init(isEnabled: @escaping () -> Bool) {
         self.isEnabled = isEnabled
         snapshotPublisher = snapshotSubject.eraseToAnyPublisher()
         signedOutPublisher = signedOutSubject.removeDuplicates().eraseToAnyPublisher()
+        waitingPublisher = waitingSubject.removeDuplicates().eraseToAnyPublisher()
     }
 
     func start(refreshInterval: TimeInterval = 120) {
@@ -47,11 +57,16 @@ final class UsageService {
         guard isEnabled() else {
             snapshotSubject.send(nil)
             signedOutSubject.send(false)
+            waitingSubject.send(false)
             return
         }
+        // Respect a pending rate-limit backoff — extra requests during the
+        // window (periodic timer, toggle) would only extend the throttle.
+        if retryScheduled { return }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
             guard let token = Self.readAccessToken() else {
+                NSLog("NotchPilot usage: no Claude Code credentials in Keychain (denied or absent)")
                 DispatchQueue.main.async {
                     self.snapshotSubject.send(nil)
                     self.signedOutSubject.send(true)
@@ -66,17 +81,32 @@ final class UsageService {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.timeoutInterval = 15
 
-            let task = URLSession.shared.dataTask(with: request) { data, response, _ in
+            let task = URLSession.shared.dataTask(with: request) { data, response, error in
                 let snapshot: UsageSnapshot?
-                if let data,
-                   let http = response as? HTTPURLResponse,
-                   (200..<300).contains(http.statusCode) {
+                let http = response as? HTTPURLResponse
+                let status = http?.statusCode ?? -1
+                if let data, (200..<300).contains(status) {
                     snapshot = UsageSnapshot.parse(from: data)
+                    NSLog("NotchPilot usage: HTTP %d, parsed %d window(s)",
+                          status, snapshot?.windows.count ?? 0)
                 } else {
                     snapshot = nil
+                    NSLog("NotchPilot usage: fetch failed (HTTP %d, error: %@)",
+                          status, error?.localizedDescription ?? "none")
+                    // Rate limited: retry after the server-suggested delay
+                    // instead of going blank until the 120s timer.
+                    if status == 429 {
+                        let suggested = http?.value(forHTTPHeaderField: "Retry-After")
+                            .flatMap(Double.init) ?? 60
+                        self.scheduleRetry(after: min(600, max(30, suggested)))
+                    }
                 }
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
+                    if snapshot != nil { self.cachedSnapshot = snapshot }
+                    // A rate-limited fetch keeps its "waiting" state (set by
+                    // scheduleRetry); any other outcome resolves it.
+                    if status != 429 { self.waitingSubject.send(false) }
                     // Keep showing the last good snapshot through transient
                     // failures; it ages out visually via fetchedAt if needed.
                     if snapshot != nil || self.snapshotSubject.value == nil {
@@ -85,6 +115,20 @@ final class UsageService {
                 }
             }
             task.resume()
+        }
+    }
+
+    private func scheduleRetry(after seconds: Double) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.waitingSubject.send(true)
+            guard !self.retryScheduled else { return }
+            self.retryScheduled = true
+            NSLog("NotchPilot usage: retrying in %.0fs", seconds)
+            DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+                self?.retryScheduled = false
+                self?.refresh()
+            }
         }
     }
 

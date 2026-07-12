@@ -12,6 +12,9 @@ public final class NotchViewModel: ObservableObject {
     /// Usage is enabled but Claude Code has no stored credentials — the
     /// panel shows a sign-in hint instead of silently hiding the section.
     @Published public private(set) var usageSignedOut = false
+    /// Usage fetch is rate-limited and waiting to retry — the panel shows a
+    /// loading row so the missing block reads as "waiting", not "broken".
+    @Published public private(set) var usageWaiting = false
     /// Tokens consumed today; nil hides the header chip.
     @Published public private(set) var tokenTally: TokenTally?
     /// Mirrored from the presenter's hover tracking.
@@ -42,6 +45,10 @@ public final class NotchViewModel: ObservableObject {
 
     public func update(usageSignedOut: Bool) {
         self.usageSignedOut = usageSignedOut
+    }
+
+    public func update(usageWaiting: Bool) {
+        self.usageWaiting = usageWaiting
     }
 
     public func update(tokenTally: TokenTally?) {
