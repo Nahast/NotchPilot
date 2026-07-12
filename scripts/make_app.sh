@@ -35,6 +35,9 @@ cp "$BIN/NotchPilot" "$APP/Contents/MacOS/NotchPilot"
 cp "$BIN/notchpilot-hook" "$APP/Contents/Helpers/notchpilot-hook"
 cp Support/Info.plist "$APP/Contents/Info.plist"
 cp Support/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+# Legal documents shown from Settings.
+cp PRIVACY_POLICY.md "$APP/Contents/Resources/PRIVACY_POLICY.md"
+cp EULA.md "$APP/Contents/Resources/EULA.md"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 if [[ -n "${VERSION:-}" ]]; then

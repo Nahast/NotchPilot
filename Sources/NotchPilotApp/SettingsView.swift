@@ -25,6 +25,8 @@ struct SettingsView: View {
     @State private var agents: [AgentDetection] = []
     /// Agent whose per-provider onboarding sheet is showing.
     @State private var connectTarget: AgentDetection?
+    /// Legal document being read (Privacy Policy / EULA).
+    @State private var legalDocument: LegalDocument?
 
     var body: some View {
         // Two columns so the window stays short: controls on the left,
@@ -60,6 +62,11 @@ struct SettingsView: View {
                 },
                 onCancel: { connectTarget = nil }
             )
+        }
+        .sheet(item: $legalDocument) { document in
+            LegalDocumentView(document: document) {
+                legalDocument = nil
+            }
         }
     }
 
@@ -183,6 +190,17 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                 Link("rjouffret@warp-lab.ai",
                      destination: URL(string: "mailto:rjouffret@warp-lab.ai")!)
+                    .font(.caption)
+            }
+            HStack(spacing: 6) {
+                Button("Privacy Policy") { legalDocument = .privacyPolicy }
+                    .buttonStyle(.link)
+                    .font(.caption)
+                Text("·")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("End User License Agreement") { legalDocument = .eula }
+                    .buttonStyle(.link)
                     .font(.caption)
             }
         }
