@@ -98,6 +98,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             usageService.start()
         }
 
+        // React to the "Show Claude usage limits" toggle immediately —
+        // the service otherwise only consults it on its periodic refresh.
+        // receive(on:) matters: @Published emits on willSet, so the hop
+        // ensures refresh() reads the NEW value.
+        settingsStore.$showUsage
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self else { return }
+                if self.demoMode {
+                    self.model.update(usage: settingsStore.showUsage ? Self.demoUsage() : nil)
+                } else {
+                    self.usageService.refresh()
+                }
+            }
+            .store(in: &cancellables)
+
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil,
