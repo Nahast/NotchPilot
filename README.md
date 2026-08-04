@@ -11,7 +11,9 @@ AI coding agent sessions — **Claude Code**, **Codex (OpenAI)**, and
   Code desktop app
 - **Virtual notch** — on displays without a physical notch, a floating
   notch-shaped pill
-- **100% local** — the only network traffic is the Sparkle update check
+- **Local by design** — no servers of ours, no telemetry; the only network
+  traffic is the update check and, while "Show Claude usage limits" is on
+  (the default), Anthropic's usage endpoint
 
 ## How it works
 
@@ -83,7 +85,9 @@ own Application Support folder plus the hooks entries in
 
 Network traffic is limited to:
 
-- the Sparkle update check against GitHub Releases;
+- the update check — Sparkle against GitHub Releases for direct installs; a
+  build obtained from an app marketplace updates through that platform
+  instead, and makes no Sparkle request;
 - when "Show Claude usage limits" is enabled (default), Anthropic's usage
   endpoint — queried with Claude Code's own OAuth credentials, read from your
   Keychain after you approve the macOS permission prompt. Credentials are

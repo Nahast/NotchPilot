@@ -1,6 +1,6 @@
 # NotchPilot Privacy Policy
 
-**Effective date:** July 11, 2026 · **Version 1.0 (beta)**
+**Effective date:** August 4, 2026 · **Version 1.1 (beta)**
 
 NotchPilot is published by Romain Jouffret, operating as Warp Lab ("we", "us").
 This policy describes exactly what data NotchPilot handles. The short version:
@@ -32,10 +32,13 @@ NotchPilot **stores** on your Mac, and nowhere else:
 
 NotchPilot **transmits** in exactly two cases:
 
-1. **Update check (Sparkle)** — the app periodically contacts our release
-   feed to look for new versions. Standard HTTP request metadata (such as your
-   IP address and app version) is visible to the hosting provider, as with any
-   web request. No personal data or agent content is sent.
+1. **Update check** — when NotchPilot is installed directly from us, it
+   periodically contacts our release feed through the Sparkle framework to
+   look for new versions. Standard HTTP request metadata (such as your IP
+   address and app version) is visible to the hosting provider, as with any
+   web request. No personal data or agent content is sent. When NotchPilot is
+   obtained from an app marketplace, updates come through that platform's own
+   mechanism instead and no Sparkle request is made.
 2. **Claude usage limits (optional)** — if "Show Claude usage limits" is
    enabled, NotchPilot reads the OAuth token Claude Code itself stored in
    your macOS Keychain (macOS asks your permission first) and sends it only
@@ -48,9 +51,18 @@ NotchPilot **transmits** in exactly two cases:
 any personal information. We do not operate servers that receive your data.
 We do not share, sell, or disclose any data to third parties.** The only
 parties that ever see network traffic from NotchPilot are Anthropic (when you
-enable usage limits) and the release-feed host (for update checks).
+enable usage limits) and, for direct installs, the release-feed host (for
+update checks).
 
-## 2. Your Control
+## 2. Payments
+
+NotchPilot is distributed free of charge, so there is nothing to pay for and
+no payment details to collect. If optional paid functionality is offered in a
+future version, the transaction is handled by the distribution platform you
+got the app from (for example Apple), under that platform's own privacy
+policy — we never receive or store your payment card details.
+
+## 3. Your Control
 
 - Disconnect any agent in Settings → Connected agents; its watchers stop and
   its hooks are removed.
@@ -59,17 +71,17 @@ enable usage limits) and the release-feed host (for update checks).
 - Delete `~/Library/Application Support/NotchPilot/` and the app itself to
   remove every trace.
 
-## 3. Children
+## 4. Children
 
 NotchPilot is a developer tool, not directed at children under 13, and
 collects no data from anyone.
 
-## 4. Changes
+## 5. Changes
 
 We may update this policy as the app evolves. Material changes will be noted
 in the release notes; the current version always ships with the app and in
 the source repository.
 
-## 5. Contact
+## 6. Contact
 
 Questions or requests: **rjouffret@warp-lab.ai**
