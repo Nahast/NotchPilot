@@ -263,6 +263,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Show the last good snapshot immediately; the refresh then
             // replaces it with fresh numbers when the network answers.
             model.update(usage: usageService.cachedSnapshot)
+            // Re-enabling is the user's cue that a previously denied Keychain
+            // prompt should be offered once more.
+            usageService.retryCredentials()
         } else {
             model.update(usage: nil)
             model.update(usageSignedOut: false)

@@ -8,9 +8,11 @@ import Security
 ///
 /// Reads Claude Code's own OAuth access token from the macOS Keychain
 /// (the "Claude Code-credentials" item); macOS asks the user for permission
-/// on first access. No credentials ever leave the machine except to
-/// api.anthropic.com itself. Failures (denied Keychain access, expired
-/// token, offline) hide the usage section — never block the app.
+/// on first access. That read goes through `UsageTokenCache`, which holds the
+/// token for the life of the launch — the refresh timer must never touch the
+/// Keychain, or macOS re-prompts on every tick. No credentials ever leave the
+/// machine except to api.anthropic.com itself. Failures (denied Keychain
+/// access, expired token, offline) hide the usage section — never block the app.
 final class UsageService {
     private static let usageURL = URL(string: "https://api.anthropic.com/api/oauth/usage")!
     private static let keychainService = "Claude Code-credentials"
@@ -32,6 +34,8 @@ final class UsageService {
     private(set) var cachedSnapshot: UsageSnapshot?
     /// One pending rate-limit retry at a time.
     private var retryScheduled = false
+    /// Keeps the 120s refresh timer away from the Keychain.
+    private let tokenCache = UsageTokenCache()
 
     init(isEnabled: @escaping () -> Bool) {
         self.isEnabled = isEnabled
@@ -65,7 +69,7 @@ final class UsageService {
         if retryScheduled { return }
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
-            guard let token = Self.readAccessToken() else {
+            guard let token = self.tokenCache.token(read: Self.readCredential) else {
                 NSLog("NotchPilot usage: no Claude Code credentials in Keychain (denied or absent)")
                 DispatchQueue.main.async {
                     self.snapshotSubject.send(nil)
@@ -93,6 +97,12 @@ final class UsageService {
                     snapshot = nil
                     NSLog("NotchPilot usage: fetch failed (HTTP %d, error: %@)",
                           status, error?.localizedDescription ?? "none")
+                    // The token we hold was refused — Claude Code has rotated
+                    // it. Let the cache spend one re-read on the next tick;
+                    // it stops by itself if the Keychain returns the same one.
+                    if status == 401 || status == 403 {
+                        self.tokenCache.invalidate()
+                    }
                     // Rate limited: retry after the server-suggested delay
                     // instead of going blank until the 120s timer.
                     if status == 429 {
@@ -134,7 +144,11 @@ final class UsageService {
 
     /// Claude Code stores its credentials as a generic-password Keychain
     /// item whose payload is JSON: {"claudeAiOauth": {"accessToken": …}}.
-    private static func readAccessToken() -> String? {
+    ///
+    /// The distinction the cache needs is *why* a read came back empty: an
+    /// absent item costs nothing to re-check, whereas a refusal means macOS
+    /// put a dialog in front of the user that we must not raise again.
+    private static func readCredential() -> UsageTokenCache.ReadResult {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
@@ -143,13 +157,22 @@ final class UsageService {
         ]
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
-        guard status == errSecSuccess,
-              let data = result as? Data,
+        guard status == errSecSuccess else {
+            NSLog("NotchPilot usage: Keychain read returned OSStatus %d", Int(status))
+            return status == errSecItemNotFound ? .unavailable : .denied
+        }
+        guard let data = result as? Data,
               let object = try? JSONSerialization.jsonObject(with: data),
               let dictionary = object as? [String: Any],
               let oauth = dictionary["claudeAiOauth"] as? [String: Any],
               let token = oauth["accessToken"] as? String, !token.isEmpty
-        else { return nil }
-        return token
+        else { return .unavailable }
+        return .token(token)
+    }
+
+    /// The user asked us to try again (they re-enabled usage in Settings) —
+    /// the one thing that reopens the Keychain after a denial.
+    func retryCredentials() {
+        tokenCache.reset()
     }
 }
