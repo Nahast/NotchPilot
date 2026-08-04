@@ -56,6 +56,9 @@ public struct ExpandedPanelView: View {
     private var panel: some View {
         VStack(alignment: .leading, spacing: 10) {
             header
+            if !model.degradations.isEmpty {
+                degradedHint
+            }
             if let usage = model.usage, !usage.windows.isEmpty {
                 UsageBlockView(usage: usage)
             } else if model.usageSignedOut {
@@ -133,6 +136,33 @@ public struct ExpandedPanelView: View {
             .help("NotchPilot Settings")
             .accessibilityLabel("NotchPilot Settings")
         }
+    }
+
+    /// Setup problems the app is working around (hook install failed, helper
+    /// missing). Persistent and quiet: same visual weight as the usage hints,
+    /// amber tint so it reads as "degraded", not "on fire" — statuses still
+    /// flow, just from weaker signals.
+    private var degradedHint: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(model.degradations, id: \.self) { degradation in
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 10))
+                    Text(degradation)
+                        .font(.system(size: 10))
+                        .lineLimit(2)
+                }
+            }
+        }
+        .foregroundStyle(Color.orange.opacity(0.75))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 9)
+                .fill(Color.orange.opacity(0.07))
+        )
+        .accessibilityElement(children: .combine)
     }
 
     /// Shown when usage is enabled but Claude Code has no stored credentials.

@@ -32,6 +32,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settingsWindow: NSWindow?
     private var onboardingWindow: NSWindow?
 
+    /// Active setup problems, keyed by source so a later success clears only
+    /// its own failure. Values are the user-facing sentences the panel shows —
+    /// a degraded app must say so, not log to a console nobody reads.
+    private var degradations: [String: String] = [:] {
+        didSet {
+            let messages = degradations.keys.sorted().map { degradations[$0]! }
+            Task { @MainActor [weak self] in
+                // The helper deploys before the model exists; the async hop
+                // means the model is normally there by now, but never crash a
+                // status report.
+                guard let model = self?.model else { return }
+                model.update(degradations: messages)
+            }
+        }
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
 
@@ -45,7 +61,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             NSLog("NotchPilot: launch at login now %@", LaunchAtLogin.isEnabled ? "enabled" : "NOT enabled")
         }
 
-        helperURL = HelperDeployer.deployIfNeeded() ?? ClaudeCodePaths.defaultHelperInstallURL
+        let deployedHelper = HelperDeployer.deployIfNeeded()
+        helperURL = deployedHelper ?? ClaudeCodePaths.defaultHelperInstallURL
+        if deployedHelper == nil {
+            degradations["helper"] =
+                "Hook helper couldn't be installed — live status events are unavailable"
+        }
         hookInstaller = HookInstaller(
             settingsURL: ClaudeCodePaths.defaultClaudeHome.appendingPathComponent("settings.json"),
             helperPath: helperURL.path
@@ -181,8 +202,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if settingsStore.hooksConsentGranted {
                     do {
                         try cursorInstaller.install()
+                        degradations["cursor-hooks"] = nil
                     } catch {
                         NSLog("NotchPilot: Cursor hooks install failed: %@", error.localizedDescription)
+                        degradations["cursor-hooks"] =
+                            "Cursor hooks couldn't be installed — Cursor sessions won't appear"
                     }
                 }
                 providers.append(CursorProvider(configuration: .init(
@@ -283,8 +307,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 try hookInstaller.install()
                 settings.hooksConsentGranted = true
+                degradations["claude-hooks"] = nil
             } catch {
                 NSLog("NotchPilot: Claude hooks install failed: %@", error.localizedDescription)
+                degradations["claude-hooks"] =
+                    "Claude hooks couldn't be installed — statuses fall back to transcript heuristics"
             }
         case .codex:
             settings.codexEnabled = true // no hooks needed
@@ -358,6 +385,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try hookInstaller.install()
             settings.hooksConsentGranted = true
+            degradations["claude-hooks"] = nil
             claudeProvider?.rescanNow()
             // Cursor hooks share the same consent — but respect an explicit
             // per-agent disconnect; reconnecting Cursor is its own flow.
@@ -367,6 +395,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         } catch {
             settings.hooksConsentGranted = false
+            // The alert is one keystroke from gone; the panel row is what
+            // keeps the degraded state from being forgotten.
+            degradations["claude-hooks"] =
+                "Claude hooks couldn't be installed — statuses fall back to transcript heuristics"
             let alert = NSAlert()
             alert.messageText = "Could not install Claude Code hooks"
             alert.informativeText = error.localizedDescription

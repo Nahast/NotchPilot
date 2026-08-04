@@ -17,6 +17,11 @@ public final class NotchViewModel: ObservableObject {
     @Published public private(set) var usageWaiting = false
     /// Tokens consumed today; nil hides the header chip.
     @Published public private(set) var tokenTally: TokenTally?
+    /// Setup problems the app is silently working around (hook install
+    /// failed, helper missing). Each is one user-facing sentence; the panel
+    /// shows them as a quiet persistent row — a degraded app must not look
+    /// like a healthy one.
+    @Published public private(set) var degradations: [String] = []
     /// Mirrored from the presenter's hover tracking.
     @Published public var isHovering = false
     /// True on displays without a physical notch: the expanded window is the
@@ -53,6 +58,10 @@ public final class NotchViewModel: ObservableObject {
 
     public func update(tokenTally: TokenTally?) {
         self.tokenTally = tokenTally
+    }
+
+    public func update(degradations: [String]) {
+        self.degradations = degradations
     }
 
     /// Panel grouping: main list capped at 5 (actives first, most recent
