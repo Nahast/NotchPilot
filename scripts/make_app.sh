@@ -6,7 +6,8 @@
 #   scripts/make_app.sh --universal     # arm64 + x86_64 (release)
 #
 # Environment:
-#   CODESIGN_IDENTITY  "Developer ID Application: ..." (default: "-" ad-hoc)
+#   CODESIGN_IDENTITY  "Developer ID Application: ..." (default: the local
+#                      Apple Development identity, else "-" ad-hoc)
 #   VERSION            marketing version (default: from Support/Info.plist)
 #   BUILD_NUMBER       CFBundleVersion (default: from Support/Info.plist)
 set -euo pipefail
@@ -14,7 +15,28 @@ cd "$(dirname "$0")/.."
 
 UNIVERSAL=0
 [[ "${1:-}" == "--universal" ]] && UNIVERSAL=1
-IDENTITY="${CODESIGN_IDENTITY:--}"
+# An ad-hoc signature has no team identifier, so its designated requirement is
+# pinned to the exact binary hash: every rebuild produces a "different app" and
+# silently voids per-app grants the user has made — Keychain ACL entries,
+# Accessibility, Automation. That is why a dev build kept re-asking for
+# Keychain access. Prefer any stable local identity so those grants survive.
+#
+# Note: the lookup deliberately uses `find-identity -v` rather than the
+# stricter `-v codesigning` policy, which reports 0 identities on machines
+# where codesign itself signs perfectly well.
+IDENTITY="${CODESIGN_IDENTITY:-}"
+if [[ -z "$IDENTITY" ]]; then
+    IDENTITIES=$(security find-identity -v 2>/dev/null)
+    for prefix in "Developer ID Application" "Apple Development"; do
+        IDENTITY=$(sed -n "s/.*\"\($prefix:.*\)\"/\1/p" <<<"$IDENTITIES" | head -1)
+        [[ -n "$IDENTITY" ]] && break
+    done
+fi
+if [[ -z "$IDENTITY" ]]; then
+    IDENTITY="-"
+    echo "warning: no signing identity found — signing ad-hoc. macOS will" >&2
+    echo "         re-ask for Keychain access after every rebuild." >&2
+fi
 
 echo "==> Building (release$([[ $UNIVERSAL == 1 ]] && echo ", universal"))"
 if [[ $UNIVERSAL == 1 ]]; then
@@ -57,10 +79,10 @@ cp -R "$SPARKLE_FW" "$APP/Contents/Frameworks/"
 
 echo "==> Codesigning (identity: $IDENTITY)"
 # Hardened runtime (required for notarization) enforces library validation,
-# which rejects ad-hoc-signed frameworks — so only enable it with a real
-# Developer ID identity; ad-hoc dev builds sign without it.
+# which rejects ad-hoc-signed frameworks — so only enable it for the Developer
+# ID builds that actually get notarized; dev builds sign without it.
 SIGN_FLAGS=()
-if [[ "$IDENTITY" != "-" ]]; then
+if [[ "$IDENTITY" == "Developer ID"* ]]; then
     SIGN_FLAGS+=(--options runtime)
 fi
 FRAMEWORK="$APP/Contents/Frameworks/Sparkle.framework"
