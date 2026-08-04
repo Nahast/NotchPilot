@@ -1,0 +1,46 @@
+name: CI
+
+# Cost control: this is a private repo, where macOS runners bill minutes at a
+# 10x multiplier — so no per-push runs. CI fires only on PRs (rare here; main
+# is often committed to directly) and on demand via the Actions tab. Doc-only
+# changes never spin up a runner.
+on:
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & test (macOS)
+    runs-on: macos-15
+    # Hard stop well under the build's normal time: a hung run on a 10x-billed
+    # runner is the expensive failure mode.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # SwiftPM's dependency checkout (Sparkle, DynamicNotchKit) dominates a
+      # cold run; keying on Package.resolved keeps warm runs to the diff.
+      - uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Build
+        run: swift build
+
+      - name: Test
+        run: swift test
+
+      # The release scripts are the deploy path and have no other coverage —
+      # a syntax error in them would otherwise surface mid-release.
+      - name: Shell-check release scripts
+        run: bash -n scripts/make_app.sh scripts/make_dmg.sh
