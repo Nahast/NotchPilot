@@ -60,6 +60,7 @@ cp Support/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # Legal documents shown from Settings.
 cp PRIVACY_POLICY.md "$APP/Contents/Resources/PRIVACY_POLICY.md"
 cp EULA.md "$APP/Contents/Resources/EULA.md"
+cp Support/PrivacyInfo.xcprivacy "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 if [[ -n "${VERSION:-}" ]]; then
@@ -96,8 +97,37 @@ for nested in \
 done
 codesign --force "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" --sign "$IDENTITY" "$FRAMEWORK"
 codesign --force "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" --sign "$IDENTITY" "$APP/Contents/Helpers/notchpilot-hook"
-codesign --force "${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}" --sign "$IDENTITY" "$APP"
+# Only the app itself sends Apple Events (click-to-jump drives iTerm2), so the
+# entitlement goes on the app and nothing else. Ad-hoc builds skip it: they
+# carry no team identity for the entitlement to be attributed to.
+APP_SIGN_FLAGS=("${SIGN_FLAGS[@]+"${SIGN_FLAGS[@]}"}")
+if [[ "$IDENTITY" != "-" ]]; then
+    APP_SIGN_FLAGS+=(--entitlements Support/NotchPilot.entitlements)
+fi
+codesign --force "${APP_SIGN_FLAGS[@]+"${APP_SIGN_FLAGS[@]}"}" --sign "$IDENTITY" "$APP"
 
 echo "==> Verifying"
 codesign --verify --deep --strict "$APP"
+# The failure this guards against is invisible at build time and only shows up
+# as a silently dead "click to jump" on a user's machine, so assert it here
+# rather than trusting the flags above stayed in place.
+if [[ "$IDENTITY" != "-" ]]; then
+    if ! codesign -d --entitlements - --xml "$APP" 2>/dev/null \
+        | plutil -convert xml1 -o - - 2>/dev/null \
+        | grep -q "com.apple.security.automation.apple-events"; then
+        echo "error: the Apple Events entitlement is missing from the signed app —" >&2
+        echo "       click-to-jump would fail silently under the hardened runtime." >&2
+        exit 1
+    fi
+    echo "==> Apple Events entitlement present"
+fi
+
+# Smoke check: the signed binary must actually launch and load its
+# frameworks. Catches rpath/embedding mistakes that codesign can't.
+if ! SMOKE_OUT=$("$APP/Contents/MacOS/NotchPilot" --smoke-test 2>&1); then
+    echo "error: smoke test failed — the built app does not launch:" >&2
+    echo "$SMOKE_OUT" >&2
+    exit 1
+fi
+echo "==> Smoke test: $SMOKE_OUT"
 echo "OK: $APP"

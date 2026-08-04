@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Click-to-jump drives iTerm2 through AppleScript. Under the hardened
+	     runtime (which notarized builds require) sending Apple Events needs
+	     this exception — the user's TCC consent alone is not enough, and
+	     without it the jump fails silently in release builds only. -->
+	<key>com.apple.security.automation.apple-events</key>
+	<true/>
+</dict>
+</plist>
