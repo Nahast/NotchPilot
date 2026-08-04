@@ -242,6 +242,23 @@ final class ClaudeCodeProviderIntegrationTests: XCTestCase {
         }
     }
 
+    /// End to end for the reported bug: the panel showed the registry's
+    /// derived placeholder while the terminal tab showed the conversation
+    /// title Claude Code writes into the transcript.
+    func testAITitleFromTranscriptOverridesDerivedRegistryName() throws {
+        alivePids = [4242]
+        try writeRegistryFile(pid: 4242, sessionId: sessionId, name: "demo-a1")
+        provider.start()
+        try appendTranscriptLine(assistantLine(activityFile: "/a/b.swift", tokens: 10))
+        try appendTranscriptLine(
+            #"{"type":"ai-title","aiTitle":"Fix the flaky login test","sessionId":"\#(sessionId)"}"#
+        )
+
+        waitForSessions(description: "terminal title shown") { sessions in
+            sessions.first?.displayName == "Fix the flaky login test"
+        }
+    }
+
     func testPullRequestStateFlowsThrough() throws {
         alivePids = [4242]
         try writeRegistryFile(pid: 4242, sessionId: sessionId, name: "demo-a1")
