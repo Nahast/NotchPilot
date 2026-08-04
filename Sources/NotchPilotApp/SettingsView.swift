@@ -1,4 +1,5 @@
 import AgentCore
+import AppKit
 import SettingsStore
 import SwiftUI
 
@@ -13,6 +14,7 @@ struct SettingsActions {
     var connectAgent: (AgentKind) -> Void
     var disconnectAgent: (AgentKind) -> Void
     var usageToggled: (Bool) -> Void
+    var diagnosticsReport: () -> String
 }
 
 /// Settings window (design spec §2): launch at login, auto-peek toggle,
@@ -28,6 +30,9 @@ struct SettingsView: View {
     @State private var connectTarget: AgentDetection?
     /// Legal document being read (Privacy Policy / EULA).
     @State private var legalDocument: LegalDocument?
+    /// Brief "Copied" label swap after Copy diagnostics — the label itself
+    /// is the confirmation, no extra chrome.
+    @State private var diagnosticsCopied = false
 
     var body: some View {
         // Two columns so the window stays short: controls on the left,
@@ -196,6 +201,16 @@ struct SettingsView: View {
                      destination: URL(string: "mailto:rjouffret@warp-lab.ai")!)
                     .font(.caption)
             }
+            Button(diagnosticsCopied ? "Copied" : "Copy diagnostics") {
+                copyDiagnostics()
+            }
+            .disabled(diagnosticsCopied)
+            Text("""
+            Copies a plain-text health report to the clipboard for pasting \
+            into a bug report — aggregate state only, no personal data.
+            """)
+            .font(.caption)
+            .foregroundStyle(.secondary)
             HStack(spacing: 6) {
                 Button("Privacy Policy") { legalDocument = .privacyPolicy }
                     .buttonStyle(.link)
@@ -249,6 +264,16 @@ struct SettingsView: View {
     private func statusColor(for agent: AgentDetection) -> Color {
         if !agent.detected { return .secondary }
         return agent.enabled ? .green : .orange
+    }
+
+    private func copyDiagnostics() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(actions.diagnosticsReport(), forType: .string)
+        diagnosticsCopied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            diagnosticsCopied = false
+        }
     }
 
     private func refreshStatus() {

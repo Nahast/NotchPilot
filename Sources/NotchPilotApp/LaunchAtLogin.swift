@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import ServiceManagement
 
 /// SMAppService wrapper (design spec §3). Only functional when running from
@@ -20,7 +21,7 @@ enum LaunchAtLogin {
                 try SMAppService.mainApp.unregister()
             }
         } catch {
-            NSLog("NotchPilot: launch-at-login change failed: %@", error.localizedDescription)
+            Log.app.error("launch-at-login change failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 }

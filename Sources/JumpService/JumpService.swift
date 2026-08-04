@@ -1,6 +1,7 @@
 import AgentCore
 import AppKit
 import Foundation
+import OSLog
 
 /// Session → focus (design spec §3):
 /// - Sessions living in the Claude desktop app: deep-link straight to the
@@ -9,6 +10,10 @@ import Foundation
 ///   path matches the project path; select and activate it.
 /// - Fallback: activate whichever host app is running.
 public final class JumpService {
+    /// This module has no dependency on the app target's Log namespace,
+    /// so it carries its own Logger under the shared subsystem.
+    private static let logger = Logger(subsystem: "com.rjouffret.NotchPilot", category: "jump")
+
     public init() {}
 
     /// Deep link into the Claude desktop app for a specific conversation.
@@ -95,7 +100,9 @@ public final class JumpService {
         var errorInfo: NSDictionary?
         let result = script.executeAndReturnError(&errorInfo)
         if let errorInfo {
-            NSLog("NotchPilot: iTerm2 jump failed: %@", errorInfo)
+            // The AppleScript error dictionary can quote the script source,
+            // which embeds the project path — keep the default redaction.
+            Self.logger.error("iTerm2 jump failed: \(String(describing: errorInfo))")
             return false
         }
         return result.stringValue == "found"

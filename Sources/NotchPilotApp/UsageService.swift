@@ -1,6 +1,7 @@
 import AgentCore
 import Combine
 import Foundation
+import OSLog
 import Security
 
 /// Fetches the account's rate-limit windows (5h session, 7d, per-model) from
@@ -70,7 +71,7 @@ final class UsageService {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
             guard let token = self.tokenCache.token(read: Self.readCredential) else {
-                NSLog("NotchPilot usage: no Claude Code credentials in Keychain (denied or absent)")
+                Log.usage.info("no Claude Code credentials in Keychain (denied or absent)")
                 DispatchQueue.main.async {
                     self.snapshotSubject.send(nil)
                     self.signedOutSubject.send(true)
@@ -91,12 +92,10 @@ final class UsageService {
                 let status = http?.statusCode ?? -1
                 if let data, (200..<300).contains(status) {
                     snapshot = UsageSnapshot.parse(from: data)
-                    NSLog("NotchPilot usage: HTTP %d, parsed %d window(s)",
-                          status, snapshot?.windows.count ?? 0)
+                    Log.usage.info("HTTP \(status, privacy: .public), parsed \(snapshot?.windows.count ?? 0, privacy: .public) window(s)")
                 } else {
                     snapshot = nil
-                    NSLog("NotchPilot usage: fetch failed (HTTP %d, error: %@)",
-                          status, error?.localizedDescription ?? "none")
+                    Log.usage.error("fetch failed (HTTP \(status, privacy: .public), error: \(error?.localizedDescription ?? "none", privacy: .public))")
                     // The token we hold was refused — Claude Code has rotated
                     // it. Let the cache spend one re-read on the next tick;
                     // it stops by itself if the Keychain returns the same one.
@@ -134,7 +133,7 @@ final class UsageService {
             self.waitingSubject.send(true)
             guard !self.retryScheduled else { return }
             self.retryScheduled = true
-            NSLog("NotchPilot usage: retrying in %.0fs", seconds)
+            Log.usage.info("retrying in \(Int(seconds), privacy: .public)s")
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
                 self?.retryScheduled = false
                 self?.refresh()
@@ -158,7 +157,7 @@ final class UsageService {
         var result: AnyObject?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         guard status == errSecSuccess else {
-            NSLog("NotchPilot usage: Keychain read returned OSStatus %d", Int(status))
+            Log.usage.error("Keychain read returned OSStatus \(status, privacy: .public)")
             return status == errSecItemNotFound ? .unavailable : .denied
         }
         guard let data = result as? Data,

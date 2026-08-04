@@ -1,5 +1,6 @@
 import ClaudeCodeProvider
 import Foundation
+import OSLog
 
 /// Copies the bundled notchpilot-hook helper to a stable location
 /// (`~/Library/Application Support/NotchPilot/bin/`) so the command registered
@@ -31,7 +32,7 @@ enum HelperDeployer {
             )
             return destination
         } catch {
-            NSLog("NotchPilot: helper deploy failed: %@", error.localizedDescription)
+            Log.app.error("helper deploy failed: \(error.localizedDescription, privacy: .public)")
             return fileManager.fileExists(atPath: destination.path) ? destination : nil
         }
     }

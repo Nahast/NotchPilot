@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 import Sparkle
 
 /// Sparkle 2 wrapper; appcast on GitHub Releases (design spec §3, §6).
@@ -25,7 +26,7 @@ final class UpdateService {
         } else {
             controller = nil
             if hasFeed {
-                NSLog("NotchPilot: Sparkle disabled — SUPublicEDKey is not a valid Ed25519 key (see RELEASING.md)")
+                Log.app.warning("Sparkle disabled — SUPublicEDKey is not a valid Ed25519 key (see RELEASING.md)")
             }
         }
     }

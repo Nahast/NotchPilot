@@ -7,6 +7,7 @@ import CursorProvider
 import HookInstaller
 import JumpService
 import NotchUI
+import OSLog
 import SettingsStore
 import SwiftUI
 
@@ -58,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Scriptable setup: `open NotchPilot.app --args --enable-launch-at-login`
         if CommandLine.arguments.contains("--enable-launch-at-login") {
             LaunchAtLogin.setEnabled(true)
-            NSLog("NotchPilot: launch at login now %@", LaunchAtLogin.isEnabled ? "enabled" : "NOT enabled")
+            Log.app.info("launch at login now \(LaunchAtLogin.isEnabled ? "enabled" : "NOT enabled", privacy: .public)")
         }
 
         let deployedHelper = HelperDeployer.deployIfNeeded()
@@ -204,7 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         try cursorInstaller.install()
                         degradations["cursor-hooks"] = nil
                     } catch {
-                        NSLog("NotchPilot: Cursor hooks install failed: %@", error.localizedDescription)
+                        Log.hooks.error("Cursor hooks install failed: \(error.localizedDescription, privacy: .public)")
                         degradations["cursor-hooks"] =
                             "Cursor hooks couldn't be installed — Cursor sessions won't appear"
                     }
@@ -309,7 +310,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 settings.hooksConsentGranted = true
                 degradations["claude-hooks"] = nil
             } catch {
-                NSLog("NotchPilot: Claude hooks install failed: %@", error.localizedDescription)
+                Log.hooks.error("Claude hooks install failed: \(error.localizedDescription, privacy: .public)")
                 degradations["claude-hooks"] =
                     "Claude hooks couldn't be installed — statuses fall back to transcript heuristics"
             }
@@ -334,7 +335,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 try hookInstaller.uninstall()
             } catch {
-                NSLog("NotchPilot: Claude hooks removal failed: %@", error.localizedDescription)
+                Log.hooks.error("Claude hooks removal failed: \(error.localizedDescription, privacy: .public)")
             }
         case .codex:
             settings.codexEnabled = false
@@ -343,7 +344,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 try cursorHooksInstaller?.uninstall()
             } catch {
-                NSLog("NotchPilot: Cursor hooks removal failed: %@", error.localizedDescription)
+                Log.hooks.error("Cursor hooks removal failed: \(error.localizedDescription, privacy: .public)")
             }
         case .other:
             break
@@ -423,6 +424,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: Diagnostics
+
+    /// Snapshot of app health for "Copy diagnostics". Whole sessions go in,
+    /// but `DiagnosticsReport.render` is the tested choke point that lets
+    /// only aggregate counts out — no names, paths, or tokens.
+    private func diagnosticsReport() -> String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        return DiagnosticsReport.render(.init(
+            appVersion: info["CFBundleShortVersionString"] as? String ?? "dev",
+            appBuild: info["CFBundleVersion"] as? String ?? "dev",
+            macOSVersion: ProcessInfo.processInfo.operatingSystemVersionString,
+            hooksInstalled: hookInstaller.isInstalled(),
+            helperPresent: FileManager.default.isExecutableFile(atPath: helperURL.path),
+            // The one path allowed in the report: the helper's fixed install
+            // location, identical on every Mac apart from the username.
+            helperInstallPath: helperURL.path,
+            agents: detectAgents().map { .init(name: $0.name, enabled: $0.enabled) },
+            sessions: model.sessions,
+            isLimitedMode: model.isLimitedMode,
+            degradations: degradations,
+            usageEnabled: settings.showUsage,
+            usageSignedOut: model.usageSignedOut
+        ))
+    }
+
     // MARK: Settings window
 
     private func showSettingsWindow() {
@@ -442,7 +468,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 detectedAgents: { [weak self] in self?.detectAgents() ?? [] },
                 connectAgent: { [weak self] kind in self?.connectAgent(kind) },
                 disconnectAgent: { [weak self] kind in self?.disconnectAgent(kind) },
-                usageToggled: { [weak self] visible in self?.setUsageVisible(visible) }
+                usageToggled: { [weak self] visible in self?.setUsageVisible(visible) },
+                diagnosticsReport: { [weak self] in self?.diagnosticsReport() ?? "" }
             )
         )
         let window = NSWindow(contentViewController: NSHostingController(rootView: view))
