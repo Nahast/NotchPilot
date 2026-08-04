@@ -135,10 +135,15 @@ public enum TranscriptLineParser {
             return event(.assistantActivity(parseAssistantMessage(message)))
         case "user":
             return event(isToolResult(dictionary["message"]) ? .toolResult : .userPrompt)
-        case "ai-title":
-            // {"type":"ai-title","aiTitle":"Fix the flaky login test","sessionId":…}
-            // Rewritten as the conversation moves on, so the last one wins.
-            guard let title = (dictionary["aiTitle"] as? String)?
+        // How a conversation reports its own name. The CLI writes ai-title and
+        // the Claude app writes custom-title; both hold the string their UI
+        // displays, and both are rewritten as the conversation moves on, so
+        // the last one wins.
+        //   {"type":"ai-title","aiTitle":"Fix the flaky login test",…}
+        //   {"type":"custom-title","customTitle":"Status checkout",…}
+        case "ai-title", "custom-title":
+            let key = type == "ai-title" ? "aiTitle" : "customTitle"
+            guard let title = (dictionary[key] as? String)?
                 .trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty
             else { return event(.uninteresting) }
             return event(.title(title))

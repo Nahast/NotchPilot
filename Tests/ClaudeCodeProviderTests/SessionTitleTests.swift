@@ -28,6 +28,38 @@ final class SessionTitleTests: XCTestCase {
         XCTAssertEqual(event?.kind, .title("Fix Keychain authentication refreshing every 2 minutes"))
     }
 
+    /// Claude app threads title themselves with `custom-title` rather than
+    /// `ai-title` — same meaning, different line type, and the only in-band
+    /// source when the desktop store lookup misses.
+    func testParsesCustomTitleLine() {
+        let event = TranscriptLineParser.parse([
+            "type": "custom-title",
+            "customTitle": "Status checkout",
+            "sessionId": "s1",
+        ])
+        XCTAssertEqual(event?.kind, .title("Status checkout"))
+    }
+
+    func testBlankCustomTitleIsIgnored() {
+        let event = TranscriptLineParser.parse([
+            "type": "custom-title", "customTitle": "  ", "sessionId": "s1",
+        ])
+        XCTAssertEqual(event?.kind, .uninteresting)
+    }
+
+    /// A Claude app thread that never reaches the desktop store still gets its
+    /// real name instead of the "droplet-40" placeholder.
+    func testCustomTitleBeatsADerivedRegistryName() {
+        seedSession()
+        store.applyRegistry(["s1": registration(name: "droplet-40", nameSource: "derived")])
+        store.apply(
+            transcript: TranscriptEvent(sessionId: "s1", cwd: nil, kind: .title("Status checkout")),
+            fallbackSessionId: "s1",
+            fallbackProjectPath: "/Users/rjouffret/Projects/Droplet"
+        )
+        XCTAssertEqual(store.snapshot().first?.displayName, "Status checkout")
+    }
+
     func testBlankAITitleIsIgnored() {
         let event = TranscriptLineParser.parse(["type": "ai-title", "aiTitle": "", "sessionId": "s1"])
         XCTAssertEqual(event?.kind, .uninteresting, "an empty title must not blank out the row")
