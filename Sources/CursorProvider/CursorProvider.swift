@@ -78,7 +78,8 @@ public final class CursorProvider: AgentProvider {
                 paths: [self.configuration.eventsDirectory.path],
                 latency: self.configuration.fsEventsLatency,
                 queue: self.queue
-            ) { [weak self] in
+            ) { [weak self] _ in
+                // One flat spool directory — the changed paths add nothing.
                 self?.scan()
             }
             watcher.start()

@@ -102,6 +102,37 @@ final class CodexProviderIntegrationTests: XCTestCase {
         }
     }
 
+    /// Polling and the safety-net walk are pushed out of reach, so the only
+    /// thing that can carry the append through is the path FSEvents reported.
+    func testAppendArrivesViaTheReportedPathAlone() throws {
+        provider = CodexProvider(configuration: .init(
+            codexHome: codexHome,
+            stalenessTimeout: { 30 * 60 },
+            pollInterval: 3600,
+            fsEventsLatency: 0.05,
+            fullWalkInterval: 3600
+        ))
+        try appendLine(#"{"timestamp":"\#(isoNow())","type":"event_msg","payload":{"type":"task_started"}}"#)
+
+        let started = expectation(description: "rollout picked up at launch")
+        started.assertForOverFulfill = false
+        provider.sessionsPublisher
+            .filter { $0.first?.status == .working }
+            .sink { _ in started.fulfill() }
+            .store(in: &cancellables)
+        provider.start()
+        wait(for: [started], timeout: 5)
+
+        let done = expectation(description: "append arrives via FSEvents")
+        done.assertForOverFulfill = false
+        provider.sessionsPublisher
+            .filter { $0.first?.status == .idle }
+            .sink { _ in done.fulfill() }
+            .store(in: &cancellables)
+        try appendLine(#"{"timestamp":"\#(isoNow())","type":"event_msg","payload":{"type":"task_complete"}}"#)
+        wait(for: [done], timeout: 10)
+    }
+
     func testApprovalRequestFlipsToNeedsAttention() throws {
         try appendLine(#"{"timestamp":"\#(isoNow())","type":"event_msg","payload":{"type":"task_started"}}"#)
         try appendLine(#"{"timestamp":"\#(isoNow())","type":"event_msg","payload":{"type":"exec_approval_request"}}"#)

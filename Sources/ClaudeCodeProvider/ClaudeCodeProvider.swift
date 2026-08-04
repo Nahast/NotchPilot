@@ -17,6 +17,11 @@ public final class ClaudeCodeProvider: AgentProvider {
         /// Fallback rescan cadence; FSEvents normally fires much sooner.
         public var pollInterval: TimeInterval
         public var fsEventsLatency: TimeInterval
+        /// Safety net cadence: a full walk of the transcript tree runs at
+        /// start and then at most this often. Between walks, only the paths
+        /// FSEvents reported are read, so steady-state cost tracks what
+        /// changed rather than how much history the user has.
+        public var fullWalkInterval: TimeInterval
         /// Whether our hooks are currently registered in settings.json —
         /// false means the provider labels itself "limited mode".
         public var hooksInstalled: () -> Bool
@@ -32,6 +37,7 @@ public final class ClaudeCodeProvider: AgentProvider {
             stalenessTimeout: @escaping () -> TimeInterval = { 30 * 60 },
             pollInterval: TimeInterval = 2.0,
             fsEventsLatency: TimeInterval = 0.2,
+            fullWalkInterval: TimeInterval = 30,
             hooksInstalled: @escaping () -> Bool = { false },
             isProcessAlive: @escaping (Int32) -> Bool = SessionRegistryReader.defaultLivenessCheck,
             desktopSessionsDirectory: URL? = ClaudeCodePaths.defaultDesktopSessionsDirectory
@@ -41,6 +47,7 @@ public final class ClaudeCodeProvider: AgentProvider {
             self.stalenessTimeout = stalenessTimeout
             self.pollInterval = pollInterval
             self.fsEventsLatency = fsEventsLatency
+            self.fullWalkInterval = fullWalkInterval
             self.hooksInstalled = hooksInstalled
             self.isProcessAlive = isProcessAlive
             self.desktopSessionsDirectory = desktopSessionsDirectory
@@ -73,6 +80,7 @@ public final class ClaudeCodeProvider: AgentProvider {
     private var pollTimer: DispatchSourceTimer?
     private var isRunning = false
     private var lastPublished: [AgentSession]?
+    private var lastFullWalkAt: Date = .distantPast
 
     public init(configuration: Configuration = Configuration()) {
         self.configuration = configuration
@@ -117,8 +125,9 @@ public final class ClaudeCodeProvider: AgentProvider {
                 paths: watchPaths,
                 latency: self.configuration.fsEventsLatency,
                 queue: self.queue
-            ) { [weak self] in
-                self?.scan()
+            ) { [weak self] changedPaths in
+                // Already on `queue` — FSEventStreamSetDispatchQueue.
+                self?.scan(scope: .changed(changedPaths))
             }
             watcher.start()
             self.watchers = [watcher]
@@ -129,7 +138,10 @@ public final class ClaudeCodeProvider: AgentProvider {
                 repeating: self.configuration.pollInterval
             )
             timer.setEventHandler { [weak self] in
-                self?.scan()
+                // The tick exists for the cheap passes (hook spool, registry,
+                // reaping); the transcript walk it used to force is now on its
+                // own, much slower cadence.
+                self?.scan(scope: .changed([]))
             }
             timer.resume()
             self.pollTimer = timer
@@ -151,6 +163,28 @@ public final class ClaudeCodeProvider: AgentProvider {
         }
     }
 
+    /// FSEvents entry point, exposed so tests can exercise scan scoping
+    /// without waiting on the kernel.
+    func fileSystemDidChange(paths: [String]) {
+        queue.async { [weak self] in
+            self?.scan(scope: .changed(paths))
+        }
+    }
+
+    /// Scan cost counters. The steady-state cost has to stay proportional to
+    /// what actually changed, which is a property tests can assert on — unlike
+    /// wall-clock timings.
+    struct ScanMetrics: Equatable {
+        var fullWalks = 0
+        var transcriptFilesVisited = 0
+    }
+
+    private var metrics = ScanMetrics()
+
+    func scanMetricsSnapshot() -> ScanMetrics {
+        queue.sync { metrics }
+    }
+
     private func stopOnQueue() {
         guard isRunning else { return }
         isRunning = false
@@ -170,7 +204,16 @@ public final class ClaudeCodeProvider: AgentProvider {
 
     // MARK: Scanning (queue-confined)
 
-    private func scan() {
+    /// How much of the transcript tree a scan has to look at.
+    private enum ScanScope {
+        /// Walk everything: start-up, an explicit rescan, and the throttled
+        /// safety net.
+        case fullWalk
+        /// Only the paths FSEvents reported (empty on a bare poll tick).
+        case changed([String])
+    }
+
+    private func scan(scope: ScanScope = .fullWalk) {
         let registry = SessionRegistryReader(
             directory: sessionsRegistryDirectory,
             isProcessAlive: configuration.isProcessAlive
@@ -178,7 +221,7 @@ public final class ClaudeCodeProvider: AgentProvider {
         store.applyRegistry(registry)
         store.rolloverTallyIfNeeded()
         processHookEvents()
-        scanTranscripts(aliveSessionIds: Set(registry.keys))
+        scanTranscripts(aliveSessionIds: Set(registry.keys), scope: scope)
         if let desktopMetadataReader {
             store.applyDesktopMetadata(desktopMetadataReader.infoBySessionId())
         }
@@ -213,19 +256,12 @@ public final class ClaudeCodeProvider: AgentProvider {
         }
     }
 
-    private func scanTranscripts(aliveSessionIds: Set<String>) {
-        let fileManager = FileManager.default
-        let projectsDir = projectsDirectory
-        guard let enumerator = fileManager.enumerator(
-            at: projectsDir,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return }
+    private func scanTranscripts(aliveSessionIds: Set<String>, scope: ScanScope) {
+        let now = Date()
+        let staleCutoff = now.addingTimeInterval(-configuration.stalenessTimeout())
 
-        let staleCutoff = Date().addingTimeInterval(-configuration.stalenessTimeout())
-
-        for case let url as URL in enumerator {
-            guard url.pathExtension == "jsonl" else { continue }
+        for url in transcriptsToRead(for: scope, now: now) {
+            metrics.transcriptFilesVisited += 1
             let path = url.path
             let transcriptSessionId = url.deletingPathExtension().lastPathComponent
 
@@ -264,6 +300,68 @@ public final class ClaudeCodeProvider: AgentProvider {
                 )
             }
         }
+    }
+
+    /// Resolves a scope into the transcripts this scan reads: the reported
+    /// paths, or — at most once per `fullWalkInterval` — every transcript in
+    /// the tree. Capping the walk by time is what keeps a burst of events from
+    /// costing a walk apiece.
+    private func transcriptsToRead(for scope: ScanScope, now: Date) -> [URL] {
+        if case let .changed(paths) = scope,
+           now.timeIntervalSince(lastFullWalkAt) < configuration.fullWalkInterval {
+            return transcriptCandidates(in: paths)
+        }
+
+        lastFullWalkAt = now
+        metrics.fullWalks += 1
+        guard let enumerator = FileManager.default.enumerator(
+            at: projectsDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        var walked: [URL] = []
+        for case let url as URL in enumerator where url.pathExtension == "jsonl" {
+            walked.append(url)
+        }
+        return walked
+    }
+
+    /// The transcripts an FSEvents batch points at. Paths outside the
+    /// transcript tree (hook spool, registry, desktop store) belong to the
+    /// other passes and are ignored here.
+    private func transcriptCandidates(in paths: [String]) -> [URL] {
+        let base = projectsDirectory.path
+        let root = FSEventsWatcher.canonicalPath(base)
+        var files: [URL] = []
+        var seen = Set<String>()
+
+        func add(_ path: String) {
+            // Rebase onto our own spelling of the root so the tailer keys the
+            // file identically however it was discovered.
+            let rebased = base + path.dropFirst(root.count)
+            if seen.insert(rebased).inserted {
+                files.append(URL(fileURLWithPath: rebased))
+            }
+        }
+
+        for reported in paths {
+            let path = FSEventsWatcher.canonicalPath(reported)
+            guard path == root || path.hasPrefix(root + "/") else { continue }
+            if path.hasSuffix(".jsonl") {
+                add(path)
+            } else {
+                // A project folder: FSEvents also reports the container when a
+                // transcript is created, and falls back to it entirely when it
+                // coalesces. Reading that one folder stays proportional to the
+                // change; anything it can't cover is on the walk.
+                let children = (try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []
+                for name in children where name.hasSuffix(".jsonl") {
+                    add(path + "/" + name)
+                }
+            }
+        }
+        return files
     }
 
     private func publishIfChanged() {

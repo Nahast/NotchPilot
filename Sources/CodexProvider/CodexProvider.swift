@@ -12,18 +12,24 @@ public final class CodexProvider: AgentProvider {
         public var stalenessTimeout: () -> TimeInterval
         public var pollInterval: TimeInterval
         public var fsEventsLatency: TimeInterval
+        /// Safety net cadence: a full walk of `sessions/` runs at start and
+        /// then at most this often. Between walks, only the rollouts FSEvents
+        /// reported are read.
+        public var fullWalkInterval: TimeInterval
 
         public init(
             codexHome: URL = FileManager.default.homeDirectoryForCurrentUser
                 .appendingPathComponent(".codex", isDirectory: true),
             stalenessTimeout: @escaping () -> TimeInterval = { 30 * 60 },
             pollInterval: TimeInterval = 2.0,
-            fsEventsLatency: TimeInterval = 0.2
+            fsEventsLatency: TimeInterval = 0.2,
+            fullWalkInterval: TimeInterval = 30
         ) {
             self.codexHome = codexHome
             self.stalenessTimeout = stalenessTimeout
             self.pollInterval = pollInterval
             self.fsEventsLatency = fsEventsLatency
+            self.fullWalkInterval = fullWalkInterval
         }
     }
 
@@ -55,6 +61,7 @@ public final class CodexProvider: AgentProvider {
     private var pollTimer: DispatchSourceTimer?
     private var isRunning = false
     private var lastPublished: [AgentSession]?
+    private var lastFullWalkAt: Date = .distantPast
     /// Injectable clock for tests.
     var now: () -> Date = { Date() }
 
@@ -80,8 +87,9 @@ public final class CodexProvider: AgentProvider {
                     paths: [sessionsDir.path],
                     latency: self.configuration.fsEventsLatency,
                     queue: self.queue
-                ) { [weak self] in
-                    self?.scan()
+                ) { [weak self] changedPaths in
+                    // Already on `queue` — FSEventStreamSetDispatchQueue.
+                    self?.scan(scope: .changed(changedPaths))
                 }
                 watcher.start()
                 self.watcher = watcher
@@ -93,7 +101,9 @@ public final class CodexProvider: AgentProvider {
                 repeating: self.configuration.pollInterval
             )
             timer.setEventHandler { [weak self] in
-                self?.scan()
+                // The tick exists for liveness and reaping; the rollout walk
+                // it used to force is now on its own, much slower cadence.
+                self?.scan(scope: .changed([]))
             }
             timer.resume()
             self.pollTimer = timer
@@ -129,26 +139,26 @@ public final class CodexProvider: AgentProvider {
 
     // MARK: Scanning (queue-confined)
 
-    private func scan() {
-        scanRollouts()
+    /// How much of `sessions/` a scan has to look at.
+    private enum ScanScope {
+        case fullWalk
+        /// Only the paths FSEvents reported (empty on a bare poll tick).
+        case changed([String])
+    }
+
+    private func scan(scope: ScanScope = .fullWalk) {
+        scanRollouts(scope: scope)
         applyNames()
         refreshLiveness()
         reapStale()
         publishIfChanged()
     }
 
-    private func scanRollouts() {
-        guard let enumerator = FileManager.default.enumerator(
-            at: sessionsDirectory,
-            includingPropertiesForKeys: [.contentModificationDateKey],
-            options: [.skipsHiddenFiles]
-        ) else { return }
-
+    private func scanRollouts(scope: ScanScope) {
         let staleCutoff = now().addingTimeInterval(-configuration.stalenessTimeout())
 
-        for case let url as URL in enumerator {
-            guard url.pathExtension == "jsonl",
-                  let sessionId = CodexRolloutParser.sessionId(fromFilename: url.lastPathComponent)
+        for url in rolloutsToRead(for: scope) {
+            guard let sessionId = CodexRolloutParser.sessionId(fromFilename: url.lastPathComponent)
             else { continue }
             let path = url.path
 
@@ -163,6 +173,62 @@ public final class CodexProvider: AgentProvider {
                 apply(event, sessionId: sessionId)
             }
         }
+    }
+
+    /// Resolves a scope into the rollouts this scan reads: the reported paths,
+    /// or — at most once per `fullWalkInterval` — every rollout under
+    /// `sessions/`.
+    private func rolloutsToRead(for scope: ScanScope) -> [URL] {
+        if case let .changed(paths) = scope,
+           now().timeIntervalSince(lastFullWalkAt) < configuration.fullWalkInterval {
+            return rolloutCandidates(in: paths)
+        }
+
+        lastFullWalkAt = now()
+        guard let enumerator = FileManager.default.enumerator(
+            at: sessionsDirectory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return [] }
+
+        var walked: [URL] = []
+        for case let url as URL in enumerator where url.pathExtension == "jsonl" {
+            walked.append(url)
+        }
+        return walked
+    }
+
+    /// The rollouts an FSEvents batch points at. Rollouts live in dated
+    /// subdirectories, so a reported directory is read one level deep rather
+    /// than dragging in the whole tree.
+    private func rolloutCandidates(in paths: [String]) -> [URL] {
+        let base = sessionsDirectory.path
+        let root = FSEventsWatcher.canonicalPath(base)
+        var files: [URL] = []
+        var seen = Set<String>()
+
+        func add(_ path: String) {
+            // Rebase onto our own spelling of the root so the tailer keys the
+            // file identically however it was discovered.
+            let rebased = base + path.dropFirst(root.count)
+            if seen.insert(rebased).inserted {
+                files.append(URL(fileURLWithPath: rebased))
+            }
+        }
+
+        for reported in paths {
+            let path = FSEventsWatcher.canonicalPath(reported)
+            guard path == root || path.hasPrefix(root + "/") else { continue }
+            if path.hasSuffix(".jsonl") {
+                add(path)
+            } else {
+                let children = (try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []
+                for name in children where name.hasSuffix(".jsonl") {
+                    add(path + "/" + name)
+                }
+            }
+        }
+        return files
     }
 
     private func apply(_ event: CodexEvent, sessionId: String) {
