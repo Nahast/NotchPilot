@@ -10,13 +10,26 @@ public struct SessionRegistryEntry: Equatable {
     /// headless, …) is treated as a routine/background run.
     public var kind: String?
     public var entrypoint: String?
-    /// Human session name ("droplet-a1").
+    /// Session name ("notchapp-2f"), which may just be a placeholder — see
+    /// `hasExplicitName`.
     public var name: String?
+    /// How `name` came about. Claude Code writes "derived" when it synthesised
+    /// the name from the working directory; such a name appears nowhere the
+    /// user can see, so it must not outrank the conversation's real title.
+    public var nameSource: String?
     public var cwd: String?
 
     public var isRoutine: Bool {
         guard let kind else { return false }
         return kind != "interactive"
+    }
+
+    /// True only when the name is known to be one the user chose. An absent
+    /// `nameSource` (older Claude Code) is assumed derived, since that is what
+    /// produced the placeholder names in the first place.
+    public var hasExplicitName: Bool {
+        guard let nameSource else { return false }
+        return nameSource != "derived"
     }
 }
 
@@ -57,6 +70,7 @@ public struct SessionRegistryReader {
                 kind: dictionary["kind"] as? String,
                 entrypoint: dictionary["entrypoint"] as? String,
                 name: dictionary["name"] as? String,
+                nameSource: dictionary["nameSource"] as? String,
                 cwd: dictionary["cwd"] as? String
             )
         }

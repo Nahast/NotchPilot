@@ -12,19 +12,34 @@ final class SessionStore {
         var pendingToolUse: Bool
         /// This session was seen in the live session registry at some point.
         var hadRegistryEntry = false
-        /// Short derived name from the session registry ("droplet-a1").
+        /// Short name from the session registry ("notchapp-2f").
         var registryName: String?
+        /// The registry name is one the user chose, not a placeholder Claude
+        /// Code derived from the working directory.
+        var registryNameIsExplicit = false
         /// Sidebar title from the Claude desktop app — what the user actually
         /// sees, so it wins over the registry name.
         var desktopTitle: String?
+        /// The conversation's title from the transcript, which is also what
+        /// Claude Code puts in the terminal tab.
+        var aiTitle: String?
         /// The registry marked this session as a non-interactive run.
         var registryIsRoutine = false
         /// The desktop app recorded this session as a scheduled-task run.
         var scheduledTaskId: String?
 
         /// Applies the display-name precedence to the session value.
+        ///
+        /// Ordered by how likely the user is to recognise the string: what the
+        /// desktop sidebar shows, then a name they chose themselves, then the
+        /// conversation title Claude Code also puts in the terminal tab. The
+        /// derived registry name is last — it is a placeholder that appears
+        /// nowhere else, so it may only fill an otherwise empty row.
         mutating func refreshName() {
-            session.name = desktopTitle ?? registryName
+            session.name = desktopTitle
+                ?? (registryNameIsExplicit ? registryName : nil)
+                ?? aiTitle
+                ?? registryName
         }
 
         /// Routine = launched by a scheduled task (desktop metadata is ground
@@ -155,6 +170,18 @@ final class SessionStore {
             touch(sessionId: sessionId, at: timestamp)
             return
         }
+        // A title describes the conversation rather than advancing it: it
+        // carries no timestamp of its own and must not open a session or move
+        // a status. Like any other metadata line it still counts as activity.
+        if case let .title(title) = event.kind {
+            if var entry = entries[sessionId] {
+                entry.aiTitle = title
+                entry.refreshName()
+                entries[sessionId] = entry
+            }
+            touch(sessionId: sessionId, at: timestamp)
+            return
+        }
         var entry = entries[sessionId] ?? Entry(
             session: AgentSession(
                 id: sessionId,
@@ -180,7 +207,7 @@ final class SessionStore {
         case .assistantActivity: signal = .transcriptAssistantActivity
         case .toolResult: signal = .transcriptToolResult
         case .userPrompt: signal = .transcriptUserPrompt
-        case .uninteresting: return // handled above
+        case .uninteresting, .title: return // handled above
         }
 
         switch SessionStateMachine.transition(current: entries[sessionId]?.session.status, signal: signal) {
@@ -228,7 +255,7 @@ final class SessionStore {
         case .userPrompt:
             entry.session.activity = "Working…"
             entry.pendingToolUse = false
-        case .uninteresting:
+        case .uninteresting, .title:
             break
         }
 
@@ -267,6 +294,9 @@ final class SessionStore {
             entry.hadRegistryEntry = true
             entry.session.isActive = true
             entry.registryName = registration.name ?? entry.registryName
+            if registration.name != nil {
+                entry.registryNameIsExplicit = registration.hasExplicitName
+            }
             entry.registryIsRoutine = registration.isRoutine
             entry.refreshName()
             entry.session.isRoutine = entry.isRoutine

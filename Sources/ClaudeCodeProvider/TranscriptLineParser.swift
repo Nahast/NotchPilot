@@ -9,6 +9,9 @@ public struct TranscriptEvent: Equatable {
         case userPrompt
         /// A tool_result came back (the turn is moving again).
         case toolResult
+        /// Claude Code named the conversation — the same string it pushes to
+        /// the terminal tab, and so the only name the user recognises.
+        case title(String)
         /// Line parsed but is not interesting for status (summaries, system, …).
         case uninteresting
     }
@@ -132,6 +135,13 @@ public enum TranscriptLineParser {
             return event(.assistantActivity(parseAssistantMessage(message)))
         case "user":
             return event(isToolResult(dictionary["message"]) ? .toolResult : .userPrompt)
+        case "ai-title":
+            // {"type":"ai-title","aiTitle":"Fix the flaky login test","sessionId":…}
+            // Rewritten as the conversation moves on, so the last one wins.
+            guard let title = (dictionary["aiTitle"] as? String)?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty
+            else { return event(.uninteresting) }
+            return event(.title(title))
         default:
             // summary lines, system lines, future line types…
             return event(.uninteresting)
