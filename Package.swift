@@ -108,5 +108,9 @@ let package = Package(
             name: "SettingsStoreTests",
             dependencies: ["SettingsStore"]
         ),
+        .testTarget(
+            name: "JumpServiceTests",
+            dependencies: ["JumpService", "AgentCore"]
+        ),
     ]
 )

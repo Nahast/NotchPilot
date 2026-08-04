@@ -62,9 +62,11 @@ public final class JumpService {
     /// The first run triggers the macOS automation permission prompt; a denial
     /// surfaces as an AppleScript error and we fall through to activation.
     private func jumpToITerm2(projectPath: String) -> Bool {
-        let escapedPath = projectPath
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
+        // A path that can't be represented safely (control characters) skips
+        // the script entirely — the caller's activation fallback still runs.
+        guard let escapedPath = Self.appleScriptStringLiteral(projectPath) else {
+            return false
+        }
         let source = """
         tell application "iTerm2"
             repeat with w in windows
@@ -97,6 +99,19 @@ public final class JumpService {
             return false
         }
         return result.stringValue == "found"
+    }
+
+    /// The path as an AppleScript double-quoted-literal body, or nil when it
+    /// contains control characters — those can't be escaped into AppleScript
+    /// source (a newline in a filename is legal on macOS, if exotic) and a
+    /// broken script string is worse than skipping the tab search.
+    static func appleScriptStringLiteral(_ string: String) -> String? {
+        guard !string.unicodeScalars.contains(where: {
+            $0.value < 0x20 || $0.value == 0x7F
+        }) else { return nil }
+        return string
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 
     // MARK: Claude Code desktop app

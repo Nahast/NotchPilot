@@ -131,6 +131,7 @@ public struct ExpandedPanelView: View {
             }
             .buttonStyle(.plain)
             .help("NotchPilot Settings")
+            .accessibilityLabel("NotchPilot Settings")
         }
     }
 

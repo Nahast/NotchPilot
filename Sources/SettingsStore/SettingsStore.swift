@@ -3,7 +3,13 @@ import Foundation
 
 /// UserDefaults-backed preferences (design spec §3).
 public final class SettingsStore: ObservableObject {
+    /// Bump when a stored key changes meaning or name, and handle the old
+    /// value in `migrate(from:)`. Version 0 is any install that predates
+    /// versioning; version 1 added the stamp itself.
+    public static let currentSchemaVersion = 1
+
     private enum Keys {
+        static let schemaVersion = "settingsSchemaVersion"
         static let stalenessTimeoutMinutes = "stalenessTimeoutMinutes"
         static let didCompleteOnboarding = "didCompleteOnboarding"
         static let hooksConsentGranted = "hooksConsentGranted"
@@ -61,6 +67,7 @@ public final class SettingsStore: ObservableObject {
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        Self.migrateIfNeeded(defaults)
         defaults.register(defaults: [
             Keys.stalenessTimeoutMinutes: 30,
             Keys.didCompleteOnboarding: false,
@@ -79,5 +86,30 @@ public final class SettingsStore: ObservableObject {
         claudeEnabled = defaults.bool(forKey: Keys.claudeEnabled)
         codexEnabled = defaults.bool(forKey: Keys.codexEnabled)
         cursorEnabled = defaults.bool(forKey: Keys.cursorEnabled)
+    }
+
+    /// Runs stored settings forward to the current schema, one version step
+    /// at a time, then stamps the version. A store written by a NEWER app
+    /// (downgrade) is left untouched: rewriting the version backwards would
+    /// make the eventual re-upgrade re-run migrations against already-new
+    /// keys.
+    private static func migrateIfNeeded(_ defaults: UserDefaults) {
+        let stored = defaults.integer(forKey: Keys.schemaVersion)
+        guard stored < currentSchemaVersion else { return }
+
+        var version = stored
+        while version < currentSchemaVersion {
+            switch version {
+            case 0:
+                // 0 → 1 introduced the version stamp itself; every key kept
+                // its meaning, so there is nothing to rewrite. This arm is
+                // the template for future steps: rename/transform keys here.
+                break
+            default:
+                break
+            }
+            version += 1
+        }
+        defaults.set(currentSchemaVersion, forKey: Keys.schemaVersion)
     }
 }

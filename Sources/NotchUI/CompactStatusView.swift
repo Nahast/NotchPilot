@@ -58,6 +58,22 @@ public struct CompactStatusView: View {
         }
         .padding(.horizontal, 2)
         .environment(\.colorScheme, .dark)
+        // The dots are far below legible size for assistive tech; speak the
+        // aggregate instead ("3 agents running, 1 needs your attention").
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.accessibilitySummary(
+            running: model.runningSessions,
+            attentionCount: model.attentionCount
+        ))
+    }
+
+    static func accessibilitySummary(running: [AgentSession], attentionCount: Int) -> String {
+        guard !running.isEmpty else { return "All agents idle" }
+        var summary = "\(running.count) agent\(running.count == 1 ? "" : "s") running"
+        if attentionCount > 0 {
+            summary += ", \(attentionCount) need\(attentionCount == 1 ? "s" : "") your attention"
+        }
+        return summary
     }
 
     /// Chunks sessions into vertical pairs: [a b c d e] → [[a b] [c d] [e]].

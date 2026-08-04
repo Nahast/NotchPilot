@@ -31,6 +31,35 @@ struct SessionRowView: View {
         .onHover { hovering = $0 }
         .onTapGesture { onJump(session) }
         .help(helpText)
+        // The row is one tap target built from decorative pieces; expose it
+        // to VoiceOver as a single button that says what the eye takes in —
+        // agent, name, status, activity — instead of a soup of dots and chips.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Self.accessibilitySummary(for: session))
+        .accessibilityHint("Jumps to this session")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// What VoiceOver speaks for the whole row.
+    static func accessibilitySummary(for session: AgentSession) -> String {
+        var parts = [
+            "\(AgentBrandColor.name(for: session.agentKind)): \(session.displayName)",
+        ]
+        switch session.status {
+        case .needsAttention: parts.append("needs your attention")
+        case .working: parts.append("working")
+        case .idle: parts.append(session.isActive ? "idle" : "closed")
+        }
+        if let activity = session.activity, !activity.isEmpty {
+            parts.append(activity)
+        }
+        if let fraction = session.contextUsageFraction {
+            parts.append("context \(Int((fraction * 100).rounded())) percent")
+        }
+        if let pullRequest = session.pullRequest {
+            parts.append("PR #\(pullRequest.number) \(pullRequest.state.rawValue.lowercased())")
+        }
+        return parts.joined(separator: ", ")
     }
 
     private var titleLine: some View {
@@ -204,6 +233,8 @@ struct StatusDotView: View {
             }
         }
         .frame(width: 9, height: 9)
+        // Redundant with the row's status chip and spoken summary.
+        .accessibilityHidden(true)
     }
 }
 
@@ -214,14 +245,26 @@ struct PullRequestChip: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            Circle()
-                .fill(color)
-                .frame(width: 5, height: 5)
+            // State is shape + color, not color alone: merged and closed read
+            // differently for colorblind users at this size.
+            Image(systemName: stateSymbol)
+                .font(.system(size: 6, weight: .heavy))
+                .foregroundStyle(color)
             Text("#\(pullRequest.number)")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundStyle(Color.white.opacity(0.55))
         }
         .help("PR #\(pullRequest.number) · \(pullRequest.state.rawValue.lowercased())")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Pull request #\(pullRequest.number), \(pullRequest.state.rawValue.lowercased())")
+    }
+
+    private var stateSymbol: String {
+        switch pullRequest.state {
+        case .open: return "circle.fill"
+        case .merged: return "checkmark"
+        case .closed: return "xmark"
+        }
     }
 
     private var color: Color {
