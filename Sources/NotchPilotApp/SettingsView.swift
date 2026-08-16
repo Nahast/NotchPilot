@@ -221,6 +221,12 @@ struct SettingsView: View {
                 Button("End User License Agreement") { legalDocument = .eula }
                     .buttonStyle(.link)
                     .font(.caption)
+                Text("·")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Third-Party Notices") { legalDocument = .thirdPartyNotices }
+                    .buttonStyle(.link)
+                    .font(.caption)
             }
         }
     }

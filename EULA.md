@@ -71,13 +71,14 @@ by copyright and other intellectual-property laws. This Agreement grants you
 a license to use the Software, not any ownership right, title, or interest in
 it. Third-party open-source components bundled with the Software (including
 DynamicNotchKit and Sparkle) remain the property of their respective owners
-and are licensed under their own terms.
+and are licensed under their own terms, reproduced in full in the
+Third-Party Notices shipped with the app and readable from Settings.
 
 ## 6. Privacy and Data
 
 The Software processes data locally on your device as described in the
-NotchPilot Privacy Policy (shipped with the app and available in the source
-repository). It collects no analytics and shares no data with third parties.
+NotchPilot Privacy Policy (shipped with the app and readable from Settings).
+It collects no analytics and shares no data with third parties.
 Where paid functionality is purchased, the transaction is handled by the
 distribution platform under that platform's privacy policy; Licensor receives
 no payment card data.

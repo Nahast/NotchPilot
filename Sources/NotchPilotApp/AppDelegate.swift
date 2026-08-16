@@ -438,8 +438,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             hooksInstalled: hookInstaller.isInstalled(),
             helperPresent: FileManager.default.isExecutableFile(atPath: helperURL.path),
             // The one path allowed in the report: the helper's fixed install
-            // location, identical on every Mac apart from the username.
+            // location. The username is the only part that differs between
+            // Macs, and `render` redacts it against the home directory below.
             helperInstallPath: helperURL.path,
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser.path,
             agents: detectAgents().map { .init(name: $0.name, enabled: $0.enabled) },
             sessions: model.sessions,
             isLimitedMode: model.isLimitedMode,

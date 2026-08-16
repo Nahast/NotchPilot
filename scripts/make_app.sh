@@ -60,6 +60,9 @@ cp Support/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 # Legal documents shown from Settings.
 cp PRIVACY_POLICY.md "$APP/Contents/Resources/PRIVACY_POLICY.md"
 cp EULA.md "$APP/Contents/Resources/EULA.md"
+# MIT obliges us to ship the bundled components' notices with the binary, not
+# merely to keep them in the repo — the app is the only artifact users get.
+cp THIRD_PARTY_NOTICES.md "$APP/Contents/Resources/THIRD_PARTY_NOTICES.md"
 cp Support/PrivacyInfo.xcprivacy "$APP/Contents/Resources/PrivacyInfo.xcprivacy"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 

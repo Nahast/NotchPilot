@@ -79,8 +79,8 @@ collects no data from anyone.
 ## 5. Changes
 
 We may update this policy as the app evolves. Material changes will be noted
-in the release notes; the current version always ships with the app and in
-the source repository.
+in the release notes; the current version always ships with the app and is
+readable at any time from Settings.
 
 ## 6. Contact
 

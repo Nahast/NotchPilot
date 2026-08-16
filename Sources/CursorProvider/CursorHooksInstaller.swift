@@ -37,7 +37,22 @@ public struct CursorHooksInstaller {
     }
 
     func command(forSpoolName spoolName: String) -> String {
-        "\"\(helperPath)\" \(spoolName) \(Self.spoolSubdirectory)"
+        "\(Self.shellSingleQuoted(helperPath)) \(spoolName) \(Self.spoolSubdirectory)"
+    }
+
+    /// A POSIX single-quoted word — see `HookInstaller.shellSingleQuoted` for
+    /// the reasoning. Deliberately duplicated rather than pulling a whole
+    /// module dependency across for four lines of string handling.
+    static func shellSingleQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
+    }
+
+    /// Matches the single-quoted form we write now, and the bare path so
+    /// hooks left by the earlier double-quoting version are still ours.
+    private func isOurCommand(_ command: String?) -> Bool {
+        guard let command else { return false }
+        return command.contains(Self.shellSingleQuoted(helperPath))
+            || command.contains(helperPath)
     }
 
     public func isInstalled() -> Bool {
@@ -46,7 +61,7 @@ public struct CursorHooksInstaller {
         else { return false }
         return Self.managedEvents.allSatisfy { event in
             guard let entries = hooks[event.cursorEvent] as? [[String: Any]] else { return false }
-            return entries.contains { ($0["command"] as? String)?.contains(helperPath) == true }
+            return entries.contains { isOurCommand($0["command"] as? String) }
         }
     }
 
@@ -79,7 +94,7 @@ public struct CursorHooksInstaller {
             default:
                 throw InstallerError.malformedHooksFile
             }
-            guard !entries.contains(where: { ($0["command"] as? String)?.contains(helperPath) == true })
+            guard !entries.contains(where: { isOurCommand($0["command"] as? String) })
             else { continue }
             entries.append(["command": command(forSpoolName: event.spoolName)])
             hooks[event.cursorEvent] = entries
@@ -100,7 +115,7 @@ public struct CursorHooksInstaller {
         var changed = false
         for event in Self.managedEvents {
             guard let entries = hooks[event.cursorEvent] as? [[String: Any]] else { continue }
-            let kept = entries.filter { ($0["command"] as? String)?.contains(helperPath) != true }
+            let kept = entries.filter { !isOurCommand($0["command"] as? String) }
             guard kept.count != entries.count else { continue }
             changed = true
             if kept.isEmpty {

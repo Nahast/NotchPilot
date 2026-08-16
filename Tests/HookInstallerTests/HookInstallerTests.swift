@@ -60,7 +60,53 @@ final class HookInstallerTests: XCTestCase {
         let entries = try XCTUnwrap(hooks["SessionStart"] as? [[String: Any]])
         let inner = try XCTUnwrap(entries[0]["hooks"] as? [[String: Any]])
         let command = try XCTUnwrap(inner[0]["command"] as? String)
-        XCTAssertEqual(command, "\"\(helperPath)\" SessionStart")
+        XCTAssertEqual(command, "'\(helperPath)' SessionStart")
+    }
+
+    // MARK: Shell quoting
+    //
+    // This string is handed to a shell by Claude Code, so it is the one value
+    // NotchPilot writes that another process executes. A macOS short name
+    // cannot contain `$`, a backtick, or a quote today — the quoting is here
+    // so that stops being the only thing standing between us and expansion.
+
+    /// Double quotes still expand `$(…)` and backticks; single quotes are the
+    /// only POSIX quoting that suppresses every expansion.
+    func testCommandSingleQuotesThePathAgainstShellExpansion() {
+        let installer = HookInstaller(
+            settingsURL: settingsURL,
+            helperPath: "/Users/$(whoami)/`id`/notchpilot-hook"
+        )
+        XCTAssertEqual(
+            installer.command(for: "SessionStart"),
+            "'/Users/$(whoami)/`id`/notchpilot-hook' SessionStart"
+        )
+    }
+
+    /// POSIX has no escape inside single quotes, so an embedded quote has to
+    /// be broken out and re-quoted rather than backslashed.
+    func testCommandEscapesASingleQuoteInThePath() {
+        let installer = HookInstaller(
+            settingsURL: settingsURL,
+            helperPath: "/Users/o'brien/notchpilot-hook"
+        )
+        XCTAssertEqual(
+            installer.command(for: "Stop"),
+            #"'/Users/o'\''brien/notchpilot-hook' Stop"#
+        )
+    }
+
+    /// Upgrade path: hooks written by the previous double-quoting version must
+    /// still be recognised as ours, or uninstall would orphan them.
+    func testUninstallRemovesHooksWrittenByTheEarlierDoubleQuotingVersion() throws {
+        try writeSettings("""
+        {"hooks": {"SessionStart": [{"hooks": [
+            {"type": "command", "command": "\\"\(helperPath)\\" SessionStart"}
+        ]}]}}
+        """)
+        try installer.uninstall()
+        let settings = try parsedSettings()
+        XCTAssertNil(settings["hooks"], "the old-format hook should have been removed")
     }
 
     // MARK: Idempotency (spec §7: apply twice → identical file)

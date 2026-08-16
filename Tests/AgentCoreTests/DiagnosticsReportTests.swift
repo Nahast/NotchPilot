@@ -16,7 +16,10 @@ final class DiagnosticsReportTests: XCTestCase {
             macOSVersion: "Version 15.5 (Build 24F74)",
             hooksInstalled: true,
             helperPresent: true,
-            helperInstallPath: "~/Library/Application Support/NotchPilot/bin/notchpilot-hook",
+            // The absolute path production actually passes — a `~` fixture
+            // would make the leak assertions below pass vacuously.
+            helperInstallPath: "/Users/someone/Library/Application Support/NotchPilot/bin/notchpilot-hook",
+            homeDirectory: "/Users/someone",
             agents: [
                 .init(name: "Claude Code", enabled: true),
                 .init(name: "Codex", enabled: true),
@@ -66,6 +69,25 @@ final class DiagnosticsReportTests: XCTestCase {
         XCTAssertTrue(report.contains("Claude Code: connected"))
         XCTAssertTrue(report.contains("Cursor: disconnected"))
         XCTAssertTrue(report.contains("Limited mode: no"))
+    }
+
+    /// The header promises "no personal data", and a macOS short name is very
+    /// often the user's real name — the only varying part of an otherwise
+    /// fixed install path, so it has to be folded back to `~`.
+    func testHelperPathHasTheHomeDirectoryRedacted() {
+        let report = DiagnosticsReport.render(makeInput())
+        XCTAssertTrue(report.contains(
+            "Helper: present at ~/Library/Application Support/NotchPilot/bin/notchpilot-hook"))
+        XCTAssertFalse(report.contains("/Users/"))
+    }
+
+    /// A helper somewhere other than the home directory carries no username to
+    /// redact, and the location is the whole point of the line — leave it be.
+    func testHelperPathOutsideHomeIsReportedVerbatim() {
+        var input = makeInput()
+        input.helperInstallPath = "/opt/notchpilot/bin/notchpilot-hook"
+        let report = DiagnosticsReport.render(input)
+        XCTAssertTrue(report.contains("Helper: present at /opt/notchpilot/bin/notchpilot-hook"))
     }
 
     func testMissingHelperAndAbsentHooksRender() {

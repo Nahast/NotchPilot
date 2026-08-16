@@ -41,6 +41,19 @@ final class CursorHooksInstallerTests: XCTestCase {
         XCTAssertTrue(installer.isInstalled())
     }
 
+    /// Same reasoning as the Claude installer: Cursor runs this string through
+    /// a shell, so the path is single-quoted to suppress every expansion.
+    func testCommandSingleQuotesThePathAgainstShellExpansion() {
+        let installer = CursorHooksInstaller(
+            hooksURL: hooksURL,
+            helperPath: "/Users/$(whoami)/notchpilot-hook"
+        )
+        XCTAssertEqual(
+            installer.command(forSpoolName: "CursorStop"),
+            "'/Users/$(whoami)/notchpilot-hook' CursorStop cursor-events"
+        )
+    }
+
     func testInstallIsIdempotent() throws {
         try installer.install()
         let first = try Data(contentsOf: hooksURL)

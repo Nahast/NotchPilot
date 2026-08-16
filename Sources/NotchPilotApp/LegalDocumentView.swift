@@ -1,9 +1,11 @@
 import SwiftUI
 
-/// A bundled legal document (Privacy Policy, EULA) shown from Settings.
+/// A bundled legal document (Privacy Policy, EULA, third-party notices)
+/// shown from Settings.
 enum LegalDocument: String, Identifiable, CaseIterable {
     case privacyPolicy = "PRIVACY_POLICY"
     case eula = "EULA"
+    case thirdPartyNotices = "THIRD_PARTY_NOTICES"
 
     var id: String { rawValue }
 
@@ -11,6 +13,7 @@ enum LegalDocument: String, Identifiable, CaseIterable {
         switch self {
         case .privacyPolicy: return "Privacy Policy"
         case .eula: return "End User License Agreement"
+        case .thirdPartyNotices: return "Third-Party Notices"
         }
     }
 
@@ -27,8 +30,8 @@ enum LegalDocument: String, Identifiable, CaseIterable {
             return text
         }
         return "The \(title) could not be loaded from this build. "
-            + "The current version is available in the source repository "
-            + "and ships with every packaged release."
+            + "It ships with every packaged release; contact "
+            + "rjouffret@warp-lab.ai for a copy."
     }
 }
 

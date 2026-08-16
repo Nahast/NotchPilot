@@ -28,8 +28,13 @@ public enum DiagnosticsReport {
         public var hooksInstalled: Bool
         public var helperPresent: Bool
         /// The helper's fixed install location — the one path the report is
-        /// allowed to contain, because it is the same on every install.
+        /// allowed to contain, and only once `homeDirectory` has been folded
+        /// back to `~`, because the username is the sole varying part of it.
         public var helperInstallPath: String
+        /// The user's home directory, used solely to redact it out of
+        /// `helperInstallPath`. A macOS short name is very often the user's
+        /// real name, so emitting it would break the report's own header.
+        public var homeDirectory: String
         public var agents: [AgentFlag]
         public var sessions: [AgentSession]
         public var isLimitedMode: Bool
@@ -46,6 +51,7 @@ public enum DiagnosticsReport {
             hooksInstalled: Bool,
             helperPresent: Bool,
             helperInstallPath: String,
+            homeDirectory: String,
             agents: [AgentFlag],
             sessions: [AgentSession],
             isLimitedMode: Bool,
@@ -59,6 +65,7 @@ public enum DiagnosticsReport {
             self.hooksInstalled = hooksInstalled
             self.helperPresent = helperPresent
             self.helperInstallPath = helperInstallPath
+            self.homeDirectory = homeDirectory
             self.agents = agents
             self.sessions = sessions
             self.isLimitedMode = isLimitedMode
@@ -80,7 +87,8 @@ public enum DiagnosticsReport {
         lines.append("App: NotchPilot \(input.appVersion) (build \(input.appBuild))")
         lines.append("macOS: \(input.macOSVersion)")
         lines.append("Hooks installed: \(yesNo(input.hooksInstalled))")
-        lines.append("Helper: \(input.helperPresent ? "present" : "MISSING") at \(input.helperInstallPath)")
+        let helperPath = redactingHome(input.helperInstallPath, home: input.homeDirectory)
+        lines.append("Helper: \(input.helperPresent ? "present" : "MISSING") at \(helperPath)")
         lines.append("Agents:")
         for agent in input.agents {
             lines.append("  \(agent.name): \(agent.enabled ? "connected" : "disconnected")")
@@ -119,6 +127,13 @@ public enum DiagnosticsReport {
                 + "needs-attention \(count(.needsAttention)), idle \(count(.idle)))")
         }
         return lines
+    }
+
+    /// Folds the home directory back to `~`. Paths elsewhere carry no
+    /// username and are left alone — the location is the diagnostic value.
+    private static func redactingHome(_ path: String, home: String) -> String {
+        guard !home.isEmpty, path.hasPrefix(home) else { return path }
+        return "~" + path.dropFirst(home.count)
     }
 
     private static func yesNo(_ value: Bool) -> String {

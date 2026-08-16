@@ -33,22 +33,33 @@ if payload["hook_event_name"] == nil {
 payload["np_event_name"] = eventName
 payload["np_received_at"] = Date().timeIntervalSince1970
 
-let eventsDirectory: URL
-if let override = ProcessInfo.processInfo.environment["NOTCHPILOT_EVENTS_DIR"], !override.isEmpty {
-    // Test hook: the override is the spool BASE when a subdirectory was
-    // requested, or the events directory itself otherwise.
-    let base = URL(fileURLWithPath: override, isDirectory: true)
-    eventsDirectory = CommandLine.arguments.count > 2
-        ? base.appendingPathComponent(spoolSubdirectory, isDirectory: true)
-        : base
-} else {
+/// Where this run drops its event file.
+///
+/// Release builds have exactly one answer: inside our own Application Support
+/// folder. The environment override is a debug-only affordance for driving the
+/// helper at a scratch directory by hand — compiling it out means a signed,
+/// notarized helper that other apps invoke cannot be redirected to write
+/// anywhere else, whatever environment it inherits.
+func resolveEventsDirectory() -> URL {
+    #if DEBUG
+    if let override = ProcessInfo.processInfo.environment["NOTCHPILOT_EVENTS_DIR"], !override.isEmpty {
+        // The override is the spool BASE when a subdirectory was requested,
+        // or the events directory itself otherwise.
+        let base = URL(fileURLWithPath: override, isDirectory: true)
+        return CommandLine.arguments.count > 2
+            ? base.appendingPathComponent(spoolSubdirectory, isDirectory: true)
+            : base
+    }
+    #endif
     let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
         ?? FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/Application Support", isDirectory: true)
-    eventsDirectory = base
+    return base
         .appendingPathComponent("NotchPilot", isDirectory: true)
         .appendingPathComponent(spoolSubdirectory, isDirectory: true)
 }
+
+let eventsDirectory = resolveEventsDirectory()
 
 try? FileManager.default.createDirectory(at: eventsDirectory, withIntermediateDirectories: true)
 

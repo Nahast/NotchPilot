@@ -128,12 +128,28 @@ public struct HookInstaller {
     // MARK: Internals
 
     func command(for event: String) -> String {
-        "\"\(helperPath)\" \(event)"
+        "\(Self.shellSingleQuoted(helperPath)) \(event)"
+    }
+
+    /// A POSIX single-quoted word: the only quoting that suppresses every
+    /// expansion (`$…`, backticks, globs). An embedded quote cannot be
+    /// escaped inside single quotes, so it is broken out and re-quoted.
+    ///
+    /// The command this builds is run by a shell inside Claude Code, which
+    /// makes it the one value NotchPilot writes that another process
+    /// executes. `helperPath` comes from `FileManager`'s home directory and a
+    /// macOS short name cannot contain a metacharacter today — this is here so
+    /// that convention stops being the only thing enforcing it.
+    static func shellSingleQuoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 
     private func isOurCommand(_ hook: [String: Any]) -> Bool {
         guard let command = hook["command"] as? String else { return false }
-        return command.contains(helperPath)
+        // The bare path also matches hooks written by versions that used
+        // double quotes, so an upgrade still recognises and cleans them up.
+        return command.contains(Self.shellSingleQuoted(helperPath))
+            || command.contains(helperPath)
     }
 
     private func containsOurCommand(_ entries: Any?) -> Bool {
