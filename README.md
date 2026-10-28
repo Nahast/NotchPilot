@@ -1,21 +1,43 @@
+<div align="center">
+
 # NotchPilot
 
-NotchPilot lives in your Mac's notch and shows the live status of your local
-AI coding agent sessions — **Claude Code**, **Codex (OpenAI)**, and
-**Cursor** — each with its own brand-colored dot in the compact view.
+**Your AI coding agents, living in the notch.**
 
-- **Session list with live status** — *working*, *needs attention*, *idle/done*
-- **Visible alert** (pulse + optional auto-peek) when an agent is waiting on you
-- **Context gauge** per session — % of the model's context window consumed
-- **Click to jump** — focuses the matching iTerm2 window/tab, or the Claude
-  Code desktop app
-- **Virtual notch** — on displays without a physical notch, a floating
-  notch-shaped pill
-- **Local by design** — no servers of ours, no telemetry; the only network
-  traffic is the update check and, while "Show Claude usage limits" is on
-  (the default), Anthropic's usage endpoint
+Live status for **Claude Code**, **Codex** and **Cursor** sessions — glanceable, local, and one click from the right terminal.
 
-## How it works
+[![CI](https://github.com/Nahast/NotchPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/Nahast/NotchPilot/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Nahast/NotchPilot?include_prereleases&color=7c5cff)](https://github.com/Nahast/NotchPilot/releases)
+![macOS 13+](https://img.shields.io/badge/macOS-13%2B-black?logo=apple)
+![Swift](https://img.shields.io/badge/Swift-5.9%2B-F05138?logo=swift&logoColor=white)
+[![License: PolyForm Shield](https://img.shields.io/badge/source-PolyForm%20Shield%201.0.0-blue)](LICENSE)
+
+[**Download**](https://github.com/Nahast/NotchPilot/releases) · [How it works](#-how-it-works) · [Privacy](#-privacy) · [Development](#-development)
+
+</div>
+
+---
+
+## ✨ Features
+
+| | |
+|---|---|
+| 🟢 **Live session list** | *Working*, *needs attention*, *idle/done* — each agent with its own brand-colored dot |
+| 🔔 **Hard-to-miss alerts** | Pulse and optional auto-peek the moment an agent is waiting on you |
+| 📊 **Context gauge** | % of the model's context window consumed, per session |
+| ⚡ **Click to jump** | Focuses the matching iTerm2 window/tab, VS Code / Cursor, or the Claude desktop app |
+| 🖥️ **Virtual notch** | No physical notch? A floating notch-shaped pill takes its place |
+| 🔒 **Local by design** | No servers of ours, no telemetry — see [Privacy](#-privacy) |
+
+## 📦 Install
+
+1. Download the latest DMG from [Releases](https://github.com/Nahast/NotchPilot/releases).
+2. Drag **NotchPilot** to Applications and launch it.
+3. Onboarding walks through the one setup step (hooks) and the iTerm2 automation permission you'll see on the first jump.
+
+Requires **macOS 13+**. Not sandboxed (it needs `~/.claude` access and Apple Events); distributed with Developer ID signing and notarization.
+
+## 🔧 How it works
 
 Two complementary local sources; no sockets, no server, no telemetry:
 
@@ -33,17 +55,7 @@ Two complementary local sources; no sockets, no server, no telemetry:
 Declining the hooks leaves NotchPilot in **limited mode**: statuses are
 estimated from transcript activity only, and labeled as such.
 
-## Install
-
-Download the latest DMG from Releases, drag NotchPilot to Applications, and
-launch. Onboarding walks through the one setup step (hooks) and the iTerm2
-automation permission you'll see on the first jump.
-
-Requires macOS 13+. Not sandboxed (the app needs `~/.claude` access and Apple
-Events), distributed outside the App Store with Developer ID signing and
-notarization.
-
-## Development
+## 💻 Development
 
 ```bash
 swift test                # unit + integration tests
@@ -75,7 +87,7 @@ appcast steps.
 
 New agents = new `AgentProvider` conformers; nothing else changes.
 
-## Privacy
+## 🔐 Privacy
 
 All processing happens on your Mac. NotchPilot reads `~/.claude` (transcripts,
 session registry, and settings) and the Claude desktop app's local session
@@ -93,3 +105,17 @@ Network traffic is limited to:
   Keychain after you approve the macOS permission prompt. Credentials are
   sent nowhere except `api.anthropic.com`. Turn the toggle off in Settings
   for zero Anthropic traffic.
+
+## 📄 License
+
+NotchPilot's source code is **source-available** under the
+[PolyForm Shield License 1.0.0](LICENSE): you can read, build, modify and
+use it freely — including at work — but you may not use it to provide a
+product that competes with NotchPilot.
+
+The compiled application distributed through Releases or an app marketplace
+is governed by the [EULA](EULA.md). Bundled open-source components are listed
+in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.md). This is not an OSI-approved
+open-source license.
+
+Found a vulnerability? See [SECURITY.md](SECURITY.md).
