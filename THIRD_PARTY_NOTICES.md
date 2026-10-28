@@ -3,8 +3,9 @@
 NotchPilot bundles the open-source components listed below. Each remains the
 property of its respective authors and is used under the license reproduced
 here in full. These notices are included to satisfy the attribution terms of
-those licenses; they do not apply to NotchPilot itself, which is governed by
-EULA.md.
+those licenses; they do not apply to NotchPilot itself, whose source code is
+available under the PolyForm Shield License 1.0.0 (see LICENSE) and whose
+compiled application is governed by EULA.md.
 
 ## DynamicNotchKit
 
