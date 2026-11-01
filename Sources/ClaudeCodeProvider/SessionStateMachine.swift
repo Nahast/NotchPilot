@@ -5,11 +5,15 @@ import Foundation
 public enum SessionSignal: Equatable {
     case hookSessionStart
     case hookNotification
+    /// Notification that only says a finished turn is still unanswered.
+    case hookIdleReminder
     case hookStop
     case hookSessionEnd
     case transcriptAssistantActivity
     case transcriptToolResult
     case transcriptUserPrompt
+    /// The user pressed Esc / rejected a tool: the turn ended with no Stop hook.
+    case transcriptInterrupted
 }
 
 public enum StatusTransition: Equatable {
@@ -24,6 +28,8 @@ public enum StatusTransition: Equatable {
 /// |-----------------------------|-----------------|
 /// | SessionStart hook           | working         |
 /// | Notification hook           | needs attention |
+/// | idle-reminder Notification  | idle (done)     |
+/// | transcript interrupt marker | idle (done)     |
 /// | transcript advances again   | working         |
 /// | Stop hook                   | idle (done)     |
 /// | SessionEnd hook             | session removed |
@@ -34,7 +40,7 @@ public enum SessionStateMachine {
             return .set(.working)
         case .hookNotification:
             return .set(.needsAttention)
-        case .hookStop:
+        case .hookStop, .hookIdleReminder, .transcriptInterrupted:
             return .set(.idle)
         case .hookSessionEnd:
             return .remove

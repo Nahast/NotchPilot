@@ -10,6 +10,9 @@ final class SessionStore {
         var hookDriven: Bool
         /// Assistant issued a tool_use and no tool_result arrived yet.
         var pendingToolUse: Bool
+        /// The last turn ended without a Stop hook (interrupt); transcript-only
+        /// heuristics must not read the interrupt line's own write as "working".
+        var turnEnded = false
         /// This session was seen in the live session registry at some point.
         var hadRegistryEntry = false
         /// Short name from the session registry ("notchapp-2f").
@@ -101,7 +104,7 @@ final class SessionStore {
         let signal: SessionSignal
         switch event.name {
         case .sessionStart: signal = .hookSessionStart
-        case .notification: signal = .hookNotification
+        case .notification: signal = event.isIdleReminder ? .hookIdleReminder : .hookNotification
         case .stop: signal = .hookStop
         case .sessionEnd: signal = .hookSessionEnd
         }
@@ -137,7 +140,9 @@ final class SessionStore {
             break
         }
 
-        if event.name == .notification {
+        if event.isIdleReminder {
+            // Still finished: keep "Done" rather than a stale or blank line.
+        } else if event.name == .notification {
             entry.session.activity = event.message ?? "Waiting for your approval"
         } else if event.name == .stop {
             entry.session.activity = "Done"
@@ -207,6 +212,7 @@ final class SessionStore {
         case .assistantActivity: signal = .transcriptAssistantActivity
         case .toolResult: signal = .transcriptToolResult
         case .userPrompt: signal = .transcriptUserPrompt
+        case .interrupted: signal = .transcriptInterrupted
         case .uninteresting, .title: return // handled above
         }
 
@@ -223,7 +229,11 @@ final class SessionStore {
             break
         }
 
+        entry.turnEnded = event.kind == .interrupted
         switch event.kind {
+        case .interrupted:
+            entry.session.activity = "Interrupted"
+            entry.pendingToolUse = false
         case let .assistantActivity(activity):
             if let description = activity.activityDescription {
                 entry.session.activity = description
@@ -379,7 +389,9 @@ final class SessionStore {
             entry.session.isLimitedMode = true
             let age = currentTime.timeIntervalSince(entry.session.lastActivityAt)
             let derived: AgentStatus
-            if age <= workingWindow {
+            if entry.turnEnded {
+                derived = .idle
+            } else if age <= workingWindow {
                 derived = .working
             } else if entry.pendingToolUse, age > stallWindow {
                 derived = .needsAttention
