@@ -104,6 +104,15 @@ let package = Package(
             name: "CursorProviderTests",
             dependencies: ["CursorProvider", "AgentCore"]
         ),
+        // End-to-end: real providers on real (temp) directories, real FSEvents,
+        // and the real notchpilot-hook binary. Debug builds only — the helper
+        // honours its events-directory override under DEBUG.
+        .testTarget(
+            name: "E2ETests",
+            dependencies: [
+                "AgentCore", "ClaudeCodeProvider", "CodexProvider", "NotchPilotHookHelper",
+            ]
+        ),
         .testTarget(
             name: "SettingsStoreTests",
             dependencies: ["SettingsStore"]

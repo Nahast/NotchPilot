@@ -9,6 +9,10 @@ public struct TranscriptEvent: Equatable {
         case userPrompt
         /// A tool_result came back (the turn is moving again).
         case toolResult
+        /// "[Request interrupted by user]": the turn was cut short. Claude
+        /// Code fires no Stop hook for it, so this is the only end-of-turn
+        /// signal.
+        case interrupted
         /// Claude Code named the conversation — the same string it pushes to
         /// the terminal tab, and so the only name the user recognises.
         case title(String)
@@ -134,7 +138,12 @@ public enum TranscriptLineParser {
             }
             return event(.assistantActivity(parseAssistantMessage(message)))
         case "user":
-            return event(isToolResult(dictionary["message"]) ? .toolResult : .userPrompt)
+            if isToolResult(dictionary["message"]) { return event(.toolResult) }
+            switch classifyUserText(userText(dictionary["message"])) {
+            case .interrupt: return event(.interrupted)
+            case .localCommand: return event(.uninteresting)
+            case .prompt: return event(.userPrompt)
+            }
         // How a conversation reports its own name. The CLI writes ai-title and
         // the Claude app writes custom-title; both hold the string their UI
         // displays, and both are rewritten as the conversation moves on, so
@@ -190,6 +199,30 @@ public enum TranscriptLineParser {
             }
         }
         return activity
+    }
+
+    private enum UserTextKind { case prompt, interrupt, localCommand }
+
+    /// Separates real prompts from the bookkeeping lines Claude Code also
+    /// writes as "user" messages. A built-in command (`/model`, `/effort`, …)
+    /// is logged as `<command-name>` + `<local-command-stdout>` and never
+    /// reaches the model, so counting it as a prompt would leave the session
+    /// "working" forever.
+    private static func classifyUserText(_ text: String?) -> UserTextKind {
+        guard let text = text?.trimmingCharacters(in: .whitespacesAndNewlines) else { return .prompt }
+        if text.hasPrefix("[Request interrupted by user") { return .interrupt }
+        let localPrefixes = ["<command-name>", "<local-command-", "<bash-input>", "<bash-stdout>"]
+        if localPrefixes.contains(where: text.hasPrefix) { return .localCommand }
+        return .prompt
+    }
+
+    private static func userText(_ message: Any?) -> String? {
+        guard let message = message as? [String: Any] else { return nil }
+        if let text = message["content"] as? String { return text }
+        if let blocks = message["content"] as? [[String: Any]] {
+            return blocks.first { $0["type"] as? String == "text" }?["text"] as? String
+        }
+        return nil
     }
 
     private static func isToolResult(_ message: Any?) -> Bool {
