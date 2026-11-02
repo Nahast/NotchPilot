@@ -413,4 +413,93 @@ final class SessionStoreTests: XCTestCase {
             "regular sessions (active then inactive) before routines"
         )
     }
+
+    // MARK: Interrupts, local commands, idle reminders
+
+    private func transcript(_ kind: TranscriptEvent.Kind, session: String = "s1") {
+        store.apply(
+            transcript: TranscriptEvent(sessionId: session, cwd: "/Users/romain/Projects/demo", kind: kind, timestamp: clock),
+            fallbackSessionId: session,
+            fallbackProjectPath: "demo"
+        )
+    }
+
+    func testInterruptReturnsAHookDrivenSessionToIdle() {
+        store.apply(hook: hookEvent(.sessionStart))
+        transcript(.userPrompt)
+        transcript(.assistantActivity(AssistantActivity(activityDescription: "Running tests…", issuedToolUse: true)))
+        XCTAssertEqual(store.snapshot()[0].status, .working)
+
+        advance(2)
+        transcript(.interrupted) // Claude Code fires no Stop hook for this
+        let session = store.snapshot()[0]
+        XCTAssertEqual(session.status, .idle)
+        XCTAssertEqual(session.activity, "Interrupted")
+    }
+
+    func testNextPromptAfterInterruptWorksAgain() {
+        store.apply(hook: hookEvent(.sessionStart))
+        transcript(.interrupted)
+        advance(5)
+        transcript(.userPrompt)
+        XCTAssertEqual(store.snapshot()[0].status, .working)
+    }
+
+    func testInterruptStaysIdleInLimitedModeInsteadOfFlashingWorking() {
+        transcriptOnlySession(pendingToolUse: true)
+        transcript(.interrupted, session: "t1")
+        store.recomputeLimitedStatuses()
+        // The interrupt line is a fresh write; the recent-write heuristic
+        // would otherwise report "working" for the next 15 seconds.
+        XCTAssertEqual(store.snapshot()[0].status, .idle)
+    }
+
+    func testLocalCommandLinesNeverOpenOrReviveASession() {
+        transcript(.uninteresting)
+        XCTAssertTrue(store.snapshot().isEmpty)
+
+        store.apply(hook: hookEvent(.sessionStart))
+        store.apply(hook: hookEvent(.stop))
+        transcript(.uninteresting) // `/model` bookkeeping after the turn
+        XCTAssertEqual(store.snapshot()[0].status, .idle)
+    }
+
+    private func notification(type: String?, message: String?) -> HookEvent {
+        HookEvent(
+            name: .notification, sessionId: "s1", cwd: "/Users/romain/Projects/demo",
+            message: message, notificationType: type, receivedAt: clock
+        )
+    }
+
+    func testIdleReminderDoesNotReAlertAFinishedSession() {
+        store.apply(hook: hookEvent(.sessionStart))
+        store.apply(hook: hookEvent(.stop))
+        advance(60)
+        store.apply(hook: notification(type: "idle_prompt", message: "Claude is waiting for your input"))
+        let session = store.snapshot()[0]
+        XCTAssertEqual(session.status, .idle)
+        XCTAssertEqual(session.activity, "Done")
+    }
+
+    func testIdleReminderRecognisedByMessageOnOlderClaudeCode() {
+        store.apply(hook: hookEvent(.sessionStart))
+        store.apply(hook: hookEvent(.stop))
+        store.apply(hook: notification(type: nil, message: "Claude is waiting for your input"))
+        XCTAssertEqual(store.snapshot()[0].status, .idle)
+    }
+
+    func testPermissionPromptStillNeedsAttention() {
+        store.apply(hook: hookEvent(.sessionStart))
+        store.apply(hook: notification(type: "permission_prompt", message: "Claude needs your permission to use Bash"))
+        let session = store.snapshot()[0]
+        XCTAssertEqual(session.status, .needsAttention)
+        XCTAssertEqual(session.activity, "Claude needs your permission to use Bash")
+    }
+
+    func testHookEventDecodesNotificationType() throws {
+        let json = #"{"hook_event_name":"Notification","session_id":"s1","notification_type":"idle_prompt","message":"x","np_received_at":1}"#
+        let event = try XCTUnwrap(HookEvent.decode(from: Data(json.utf8)))
+        XCTAssertEqual(event.notificationType, "idle_prompt")
+        XCTAssertTrue(event.isIdleReminder)
+    }
 }

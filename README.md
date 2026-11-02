@@ -58,7 +58,8 @@ estimated from transcript activity only, and labeled as such.
 ## 💻 Development
 
 ```bash
-swift test                # unit + integration tests
+swift test                # unit + integration + end-to-end tests
+swift test --filter E2ETests   # e2e only: real providers, FSEvents and hook binary
 swift run NotchPilot      # dev run (no bundle: Sparkle/launch-at-login off)
 swift run NotchPilot --demo   # synthetic sessions for screenshots/QA
 scripts/make_app.sh       # assemble dist/NotchPilot.app (ad-hoc signed)

@@ -57,6 +57,12 @@ public final class CodexProvider: AgentProvider {
     private let index: CodexSessionIndex
     private let sessionsSubject = CurrentValueSubject<[AgentSession], Never>([])
     private var sessions: [String: AgentSession] = [:]
+    /// Sub-threads (guardian approval reviews, spawned subagents) → owning
+    /// thread. They get their own rollouts, but they are one piece of work from
+    /// the user's side: hidden as rows, counted as activity on the owner.
+    private var parentOfChild: [String: String] = [:]
+    /// Tool calls issued but not yet answered, per session.
+    private var openToolCalls: [String: Set<String>] = [:]
     private var watcher: FSEventsWatcher?
     private var pollTimer: DispatchSourceTimer?
     private var isRunning = false
@@ -81,10 +87,16 @@ public final class CodexProvider: AgentProvider {
             guard let self, !self.isRunning else { return }
             self.isRunning = true
 
+            // `sessions/` only appears with the first Codex run. Until then
+            // watch its parent (FSEvents is recursive, so the new tree is
+            // covered) instead of going deaf until the next full walk.
             let sessionsDir = self.sessionsDirectory
-            if FileManager.default.fileExists(atPath: sessionsDir.path) {
+            let watchRoot = FileManager.default.fileExists(atPath: sessionsDir.path)
+                ? sessionsDir
+                : self.configuration.codexHome
+            if FileManager.default.fileExists(atPath: watchRoot.path) {
                 let watcher = FSEventsWatcher(
-                    paths: [sessionsDir.path],
+                    paths: [watchRoot.path],
                     latency: self.configuration.fsEventsLatency,
                     queue: self.queue
                 ) { [weak self] changedPaths in
@@ -166,6 +178,9 @@ public final class CodexProvider: AgentProvider {
                 let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?
                     .contentModificationDate ?? .distantPast
                 guard modified >= staleCutoff else { continue }
+                if let head = CodexRolloutParser.readHead(atPath: path) {
+                    apply(head, sessionId: sessionId)
+                }
             }
 
             for lineData in tailer.readNewLines(at: path).lines {
@@ -233,6 +248,21 @@ public final class CodexProvider: AgentProvider {
 
     private func apply(_ event: CodexEvent, sessionId: String) {
         let timestamp = event.timestamp ?? now()
+
+        if case let .sessionMeta(_, parentThreadId?) = event.kind {
+            parentOfChild[sessionId] = parentThreadId
+            sessions[sessionId] = nil
+            openToolCalls[sessionId] = nil
+        }
+        if let parentId = parentOfChild[sessionId] {
+            // Child work keeps the owner alive; it never gets a row of its own.
+            if var parent = sessions[parentId], timestamp > parent.lastActivityAt {
+                parent.lastActivityAt = timestamp
+                sessions[parentId] = parent
+            }
+            return
+        }
+
         var session = sessions[sessionId] ?? AgentSession(
             id: sessionId,
             projectPath: "",
@@ -251,8 +281,12 @@ public final class CodexProvider: AgentProvider {
         }
 
         switch event.kind {
-        case let .sessionMeta(cwd):
+        case let .sessionMeta(cwd, _):
             if let cwd, !cwd.isEmpty {
+                session.projectPath = cwd
+            }
+        case let .turnContext(cwd):
+            if session.projectPath.isEmpty, let cwd, !cwd.isEmpty {
                 session.projectPath = cwd
             }
         case .taskStarted, .userMessage:
@@ -260,9 +294,21 @@ public final class CodexProvider: AgentProvider {
         case .taskComplete:
             setStatus(.idle)
             session.activity = "Done"
-        case let .agentActivity(description):
+            openToolCalls[sessionId] = nil
+        case .turnAborted:
+            setStatus(.idle)
+            session.activity = "Interrupted"
+            openToolCalls[sessionId] = nil
+        case let .agentActivity(description, callId):
             setStatus(.working)
             session.activity = description
+            if let callId {
+                openToolCalls[sessionId, default: []].insert(callId)
+            }
+        case let .toolOutput(callId):
+            if let callId {
+                openToolCalls[sessionId]?.remove(callId)
+            }
         case .approvalRequest:
             setStatus(.needsAttention)
             session.activity = "Waiting for your approval"
@@ -288,8 +334,13 @@ public final class CodexProvider: AgentProvider {
 
     private func refreshLiveness() {
         let cutoff = now().addingTimeInterval(-Self.activeGraceWindow)
+        let staleCutoff = now().addingTimeInterval(-configuration.stalenessTimeout())
         for (id, var session) in sessions {
+            // A long build or test run writes nothing until it finishes, but
+            // the unanswered tool call proves the turn is still going.
+            let awaitingTool = !(openToolCalls[id]?.isEmpty ?? true)
             let active = session.lastActivityAt >= cutoff
+                || (awaitingTool && session.lastActivityAt >= staleCutoff)
             guard session.isActive != active else { continue }
             session.isActive = active
             // A silent Codex process can't still be working.
@@ -306,6 +357,7 @@ public final class CodexProvider: AgentProvider {
         for (id, session) in sessions
         where !session.isActive && session.lastActivityAt < cutoff {
             sessions[id] = nil
+            openToolCalls[id] = nil
         }
     }
 

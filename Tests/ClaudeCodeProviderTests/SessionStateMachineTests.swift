@@ -96,4 +96,11 @@ final class SessionStateMachineTests: XCTestCase {
         XCTAssertFalse(apply(.hookSessionEnd))
         XCTAssertNil(status)
     }
+
+    func testInterruptAndIdleReminderEndTheTurnFromAnyState() {
+        for current in [nil, .working, .needsAttention, .idle] as [AgentStatus?] {
+            XCTAssertEqual(SessionStateMachine.transition(current: current, signal: .transcriptInterrupted), .set(.idle))
+            XCTAssertEqual(SessionStateMachine.transition(current: current, signal: .hookIdleReminder), .set(.idle))
+        }
+    }
 }

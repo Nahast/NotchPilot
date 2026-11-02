@@ -18,6 +18,9 @@ public struct HookEvent: Equatable {
     /// Human-facing message for Notification events
     /// ("Claude needs your permission to use Bash").
     public var message: String?
+    /// Why a Notification fired: "permission_prompt", "idle_prompt", … Absent
+    /// on older Claude Code versions.
+    public var notificationType: String?
     public var receivedAt: Date
 
     public init(
@@ -26,6 +29,7 @@ public struct HookEvent: Equatable {
         cwd: String? = nil,
         transcriptPath: String? = nil,
         message: String? = nil,
+        notificationType: String? = nil,
         receivedAt: Date
     ) {
         self.name = name
@@ -33,7 +37,17 @@ public struct HookEvent: Equatable {
         self.cwd = cwd
         self.transcriptPath = transcriptPath
         self.message = message
+        self.notificationType = notificationType
         self.receivedAt = receivedAt
+    }
+
+    /// The reminder Claude Code sends after a finished turn has sat unanswered
+    /// ("Claude is waiting for your input"). It says the session is done, not
+    /// that it is blocked.
+    public var isIdleReminder: Bool {
+        guard name == .notification else { return false }
+        if let notificationType { return notificationType == "idle_prompt" }
+        return message?.localizedCaseInsensitiveContains("waiting for your input") == true
     }
 
     /// Tolerant decode; returns nil for unknown event names or missing session id.
@@ -61,6 +75,7 @@ public struct HookEvent: Equatable {
             cwd: dictionary["cwd"] as? String,
             transcriptPath: dictionary["transcript_path"] as? String,
             message: dictionary["message"] as? String,
+            notificationType: dictionary["notification_type"] as? String,
             receivedAt: receivedAt
         )
     }

@@ -9,7 +9,7 @@ final class CodexRolloutParserTests: XCTestCase {
         {"timestamp":"2026-03-20T04:26:08.120Z","type":"session_meta","payload":{"id":"019d097d-d8fb-7742-b09c-bcb6a814449d","cwd":"/Users/romain/Projects/demo","originator":"codex_vscode","cli_version":"0.115.0"}}
         """
         let event = try XCTUnwrap(CodexRolloutParser.parse(Data(line.utf8)))
-        XCTAssertEqual(event.kind, .sessionMeta(cwd: "/Users/romain/Projects/demo"))
+        XCTAssertEqual(event.kind, .sessionMeta(cwd: "/Users/romain/Projects/demo", parentThreadId: nil))
         XCTAssertNotNil(event.timestamp)
     }
 
@@ -63,5 +63,84 @@ final class CodexRolloutParserTests: XCTestCase {
         )
         XCTAssertNil(CodexRolloutParser.sessionId(fromFilename: "not-a-rollout.jsonl"))
         XCTAssertNil(CodexRolloutParser.sessionId(fromFilename: "rollout-short.jsonl"))
+    }
+
+    // MARK: Modern rollout shapes (fixtures mirror codex rollouts from Oct 2026)
+
+    func testCustomToolCallIsActivityWithItsCallId() throws {
+        let exec = #"{"type":"response_item","payload":{"type":"custom_tool_call","status":"completed","call_id":"call_1","name":"exec","input":"text(1+1)"}}"#
+        let patch = #"{"type":"response_item","payload":{"type":"custom_tool_call","call_id":"call_2","name":"apply_patch","input":"*** Begin Patch"}}"#
+        XCTAssertEqual(
+            CodexRolloutParser.parse(Data(exec.utf8))?.kind,
+            .agentActivity(description: "Running a command…", callId: "call_1")
+        )
+        XCTAssertEqual(
+            CodexRolloutParser.parse(Data(patch.utf8))?.kind,
+            .agentActivity(description: "Editing files…", callId: "call_2")
+        )
+    }
+
+    func testToolOutputsCloseTheirCall() {
+        let custom = #"{"type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call_1","output":"ok"}}"#
+        let function = #"{"type":"response_item","payload":{"type":"function_call_output","call_id":"call_9","output":"ok"}}"#
+        XCTAssertEqual(CodexRolloutParser.parse(Data(custom.utf8))?.kind, .toolOutput(callId: "call_1"))
+        XCTAssertEqual(CodexRolloutParser.parse(Data(function.utf8))?.kind, .toolOutput(callId: "call_9"))
+    }
+
+    func testExecCommandUsesCmdKey() {
+        let line = #"{"type":"response_item","payload":{"type":"function_call","name":"exec_command","call_id":"c","arguments":"{\"cmd\":\"swift test\"}"}}"#
+        XCTAssertEqual(
+            CodexRolloutParser.parse(Data(line.utf8))?.kind,
+            .agentActivity(description: "Running: swift test", callId: "c")
+        )
+    }
+
+    func testTurnAborted() {
+        let line = #"{"type":"event_msg","payload":{"type":"turn_aborted","reason":"interrupted"}}"#
+        XCTAssertEqual(CodexRolloutParser.parse(Data(line.utf8))?.kind, .turnAborted)
+    }
+
+    func testSubThreadMetaCarriesItsParent() {
+        let line = #"{"type":"session_meta","payload":{"id":"c","parent_thread_id":"p","cwd":"/x","thread_source":"guardian_review"}}"#
+        XCTAssertEqual(
+            CodexRolloutParser.parse(Data(line.utf8))?.kind,
+            .sessionMeta(cwd: "/x", parentThreadId: "p")
+        )
+    }
+
+    func testTurnContextCarriesCwd() {
+        let line = #"{"type":"turn_context","payload":{"turn_id":"t","cwd":"/Users/romain/Projects/api"}}"#
+        XCTAssertEqual(CodexRolloutParser.parse(Data(line.utf8))?.kind, .turnContext(cwd: "/Users/romain/Projects/api"))
+    }
+
+    /// The session total only grows; the gauge must follow what the last
+    /// request actually put in the window.
+    func testTokenCountPrefersLastRequestUsage() {
+        let line = #"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":900000},"last_token_usage":{"total_tokens":41000},"model_context_window":475000}}}"#
+        XCTAssertEqual(
+            CodexRolloutParser.parse(Data(line.utf8))?.kind,
+            .tokenCount(usedTokens: 41_000, contextWindow: 475_000)
+        )
+    }
+
+    func testTokenCountWithoutInfoIsHarmless() {
+        let line = #"{"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{}}}"#
+        XCTAssertEqual(
+            CodexRolloutParser.parse(Data(line.utf8))?.kind,
+            .tokenCount(usedTokens: nil, contextWindow: nil)
+        )
+    }
+
+    func testReadHeadFindsMetaBehindALargePrompt() throws {
+        let path = NSTemporaryDirectory() + "head-\(UUID().uuidString).jsonl"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        let prompt = String(repeating: "x", count: 300_000) // > the tailer's 256 KB window
+        let meta = #"{"type":"session_meta","payload":{"cwd":"/Users/romain/Projects/api","base_instructions":""# + prompt + #""}}"# + "\n{\"type\":\"turn_context\"}\n"
+        try Data(meta.utf8).write(to: URL(fileURLWithPath: path))
+        XCTAssertEqual(
+            CodexRolloutParser.readHead(atPath: path)?.kind,
+            .sessionMeta(cwd: "/Users/romain/Projects/api", parentThreadId: nil)
+        )
+        XCTAssertNil(CodexRolloutParser.readHead(atPath: "/nonexistent/rollout.jsonl"))
     }
 }
